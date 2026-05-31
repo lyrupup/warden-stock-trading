@@ -20,6 +20,7 @@
 | 缓存 | **Redis 7** | 行情快照缓存、限流、会话、分布式锁 |
 | 消息/异步 | **RabbitMQ 3**（可选） | 回测、AI 分析、推送等耗时任务异步化 |
 | 调度 | **robfig/cron v3** | M5 定时任务调度 |
+| 行情数据源 | **bensema/gotdx**（直连通达信，主力）+ Tushare HTTP（补充） | 见 §5 M1 选型，经连接池封装接入 |
 | 鉴权 | **JWT**（golang-jwt） | Bearer Token，多用户预留 |
 | 配置 | **viper** + 环境变量 | 不硬编码 |
 | 校验 | **go-playground/validator** | DTO 参数校验 |
@@ -604,69 +605,164 @@ type IMarketProvider interface {
 #### 行情数据源 / SDK 选型
 
 > A 股**没有官方 Go SDK**，主流是封装新浪 / 腾讯 / 东方财富 / 通达信的公开接口，或对接 Tushare / BaoStock。本系统通过 `IMarketProvider` 接口屏蔽底层差异，可按需切换或组合多源。
+>
+> **选型结论：以 `bensema/gotdx`（直连通达信协议）为主力行情源。** 经评估，社区里多数 A 股 Go 封装库（efinance-go / akshare-go / baostock-go 等）star 偏低、维护者单一、存在停更风险，不宜作为核心强依赖；而 `gotdx` 在活跃度、能力覆盖、健壮性上明显更优，作为主源更稳妥。
 
-| 库 | 数据源 | 用途定位 | 说明 |
-|----|--------|---------|------|
-| **efinance-go** `github.com/T1anjiu/efinance-go` | 腾讯 + 东方财富 | **实时行情 / K 线 / 基本面 / 资金流（主力源）** | 纯 Go，内置缓存 + 自动重试 + 并发限流，连接池复用，依赖少 |
-| **adata-go** / `Hanson/adata-golang` | 东财/新浪/腾讯/百度 | 行情 + 财务 + 北向资金 / 龙虎榜等舆情 | 接口全，含市场情绪数据，适合 M1 概览 / M4 风控 |
-| **akshare(Go)** `github.com/BlakeLiAFK/akshare` | 多源 | 历史行情 / 基本面 / 指数（1100+ 接口） | 对标 Python AKShare，覆盖最广，适合回测取数 |
-| **go-tushare-sdk** `github.com/yushikuann/go-tushare-sdk` | Tushare Pro | 权威历史 / 财务 / 基本面 | 需 token + 积分，数据规范，适合正式回测 / 基本面 |
-| **baostock(Go)** `github.com/millken/baostock` | BaoStock | 免费历史日 / 分钟 K 线、财务 | 免费无需 token（需 Login），适合 MVP 回测 |
-| **tongstock** `github.com/sjzsdu/tongstock` | 通达信(7709) | 五档 / 分笔 / Level 深度行情 | 深度行情，可独立起 HTTP 服务 |
+**主力源：`bensema/gotdx`**（189★/85fork，MIT，持续维护，纯 Go 直连通达信 TCP 协议）
+
+| 维度 | 说明 |
+|------|------|
+| 优势 | 无需 token / 无需 HTTP 抓取；内置 host 地址池 + **TCP 测速选最快节点** + 超时/重试可配；覆盖快照、K线、分时、逐笔、F10、财务、除权除息、板块、资金流、集合竞价、异动 |
+| 覆盖需求 | M1 实时行情/K线/分时/指数 + M2 回测历史K线（+复权） + M2 基本面（F10/财务） + M4 风控（资金流/异动/板块） 一站式满足 |
+| 注意点 | ① 通达信为**非官方逆向协议**，服务端可能变更/限频（库的地址池+测速+重试已缓解）；② TDX **单连接非并发安全**，后端必须封装**连接池**借还；③ 实时性为**快照级（约 3–5s）**，非毫秒 tick，个人系统足够；④ K线默认**不复权**，需用 `GetXDXRInfo` 自算前/后复权 |
+
+**补充 / 备选源**（均通过 `IMarketProvider` 接入，按需启用）：
+
+| 库 / 源 | 用途定位 | 说明 |
+|---------|---------|------|
+| **Tushare Pro（HTTP API）** | 权威历史 / 财务 / 基本面校验 | 官方成熟，仅需 HTTP + token，无需 Go SDK；可作 gotdx 数据的交叉校验/补充 |
+| Python sidecar（AKShare / BaoStock） | 海量历史 / 特色指标 | Python 生态最成熟（高 star），起一个内网小服务供 Go 调用，规避低 star Go wrapper 风险 |
+| efinance-go / akshare-go 等 | 仅作参考 | star 低、维护风险高，**仅作协议/字段参考，不建议直接 import 为核心依赖** |
 
 **推荐落地组合（V1）**：
-- **实时行情 / K 线 / 搜索** → `efinance-go`（`MarketProviderEfinance` 实现 `IMarketProvider`）。
-- **回测历史数据** → `baostock`（免费）或 `akshare(Go)`；正式环境可升级 `Tushare`。
-- 通过配置 `MARKET_PROVIDER=efinance|tushare|baostock` 选择实现；也支持 M7 用户级覆盖（用户填自己的 Tushare token）。
+- **实时行情 / K线 / 分时 / F10 / 财务 / 资金流 → `gotdx`（主力）**。
+- **权威历史 / 基本面（可选校验）→ Tushare Pro HTTP**（用户在 M7 填自己的 token）。
+- 通过配置 `MARKET_PROVIDER=gotdx|tushare` 选择实现；支持 M7 用户级覆盖。
 
-> ⚠️ 合规提示：免费公开源（新浪/腾讯/东财）有频率限制与稳定性风险，且通常仅限个人非商业使用。需做好限频、重试、缓存兜底；未来商用应评估合规并接入券商 QMT / 持牌数据厂商。
+> ⚠️ 合规提示：通达信等公开/逆向源仅适合个人非商业使用，存在频率限制与稳定性风险。务必做好限频、重试、缓存兜底；未来商用应评估合规并接入券商 QMT / 持牌数据厂商。
 
-#### Provider 脚手架示例（efinance-go）
+#### gotdx 连接池封装（解决 TDX 单连接非并发安全）
+
+> TDX 单个 `gotdx.Client` 的 TCP 连接**不可被多 goroutine 并发复用**。后端在 Gin 高并发下必须用连接池：每次请求借一个连接，用完归还；连接断开时重建。
 
 ```go
-// internal/integration/market/efinance_provider.go
+// internal/integration/market/gotdx_pool.go
+package market
+
+import (
+    "context"
+    "sync"
+
+    "github.com/bensema/gotdx"
+)
+
+type gotdxPool struct {
+    mu    sync.Mutex
+    idle  []*gotdx.Client
+    max   int
+    n     int
+    newFn func() (*gotdx.Client, error)
+}
+
+func newGotdxPool(max int) *gotdxPool {
+    return &gotdxPool{
+        max: max,
+        newFn: func() (*gotdx.Client, error) {
+            hosts := gotdx.MainHostAddresses()
+            cli := gotdx.New(
+                gotdx.WithTCPAddress(hosts[0]),
+                gotdx.WithTCPAddressPool(hosts[1:]...),
+                gotdx.WithAutoSelectFastest(true), // 自动选最快节点
+                gotdx.WithTimeoutSec(6),
+            )
+            return cli, cli.Connect()
+        },
+    }
+}
+
+func (p *gotdxPool) Get() (*gotdx.Client, error) {
+    p.mu.Lock()
+    if len(p.idle) > 0 {
+        cli := p.idle[len(p.idle)-1]
+        p.idle = p.idle[:len(p.idle)-1]
+        p.mu.Unlock()
+        return cli, nil
+    }
+    p.n++
+    p.mu.Unlock()
+    return p.newFn() // 新建连接（含 host 测速）
+}
+
+func (p *gotdxPool) Put(cli *gotdx.Client, broken bool) {
+    if broken { // 连接异常则丢弃并重置计数，下次重建
+        _ = cli.Disconnect()
+        p.mu.Lock(); p.n--; p.mu.Unlock()
+        return
+    }
+    p.mu.Lock(); p.idle = append(p.idle, cli); p.mu.Unlock()
+}
+```
+
+#### Provider 脚手架示例（gotdx）
+
+```go
+// internal/integration/market/gotdx_provider.go
 package market
 
 import (
     "context"
 
-    ef "github.com/T1anjiu/efinance-go/stock"
+    "github.com/bensema/gotdx"
     "warden/internal/model"
 )
 
-type efinanceProvider struct{}
+type gotdxProvider struct{ pool *gotdxPool }
 
-func NewEfinanceProvider() IMarketProvider { return &efinanceProvider{} }
-
-func (p *efinanceProvider) Quotes(ctx context.Context, codes []string) ([]model.StockQuote, error) {
-    out := make([]model.StockQuote, 0, len(codes))
-    for _, code := range codes {
-        select {
-        case <-ctx.Done():
-            return nil, ctx.Err() // 传播取消/超时
-        default:
-        }
-        q, err := ef.GetLatestQuote(code)
-        if err != nil {
-            return nil, err
-        }
-        out = append(out, mapQuote(q))
-    }
-    return out, nil
+func NewGotdxProvider(maxConn int) IMarketProvider {
+    return &gotdxProvider{pool: newGotdxPool(maxConn)}
 }
 
-func (p *efinanceProvider) Kline(ctx context.Context, code, period, adjust string) ([]model.Kline, error) {
-    bars, err := ef.GetQuoteHistory(code, period, adjust) // 日/周/月/分钟 + 前后复权
+func (p *gotdxProvider) Quotes(ctx context.Context, codes []string) ([]model.StockQuote, error) {
+    select {
+    case <-ctx.Done():
+        return nil, ctx.Err() // 传播超时/取消
+    default:
+    }
+    cli, err := p.pool.Get()
     if err != nil {
         return nil, err
     }
-    return mapKlines(bars), nil
+    rows, err := cli.StockQuotesDetail(marketsOf(codes), symbolsOf(codes))
+    p.pool.Put(cli, err != nil) // 出错视为连接可能损坏，归还时丢弃
+    if err != nil {
+        return nil, err
+    }
+    return mapQuotes(rows), nil
 }
 
-// Indices / Search 同理封装；mapXxx 负责字段映射到本系统 model
+func (p *gotdxProvider) Kline(ctx context.Context, code, period, adjust string) ([]model.Kline, error) {
+    cli, err := p.pool.Get()
+    if err != nil {
+        return nil, err
+    }
+    bars, err := cli.StockKLine(marketOf(code), code, periodOf(period), 0, 800)
+    if err != nil {
+        p.pool.Put(cli, true)
+        return nil, err
+    }
+    var xdxr []gotdx.XDXRInfo
+    if adjust != "" { // 需要复权时拉除权除息数据
+        xdxr, err = cli.GetXDXRInfo(marketOf(code), code)
+    }
+    p.pool.Put(cli, err != nil)
+    if err != nil {
+        return nil, err
+    }
+    return applyAdjust(mapKlines(bars), xdxr, adjust), nil // 自算前/后复权
+}
+
+// Indices / Search 同理封装；mapXxx / applyAdjust 负责字段映射与复权计算
 ```
 
-> Service 层只依赖 `IMarketProvider` 接口，测试时用 mockgen 生成 mock，禁止单测中真实外呼（见 §6.2）。切换数据源仅需在依赖注入处替换 `NewEfinanceProvider()` 为其他实现。
+#### 复权计算说明（M2 回测必备）
+
+gotdx 返回的 K 线为**不复权**价。回测需用 `GetXDXRInfo`（每次分红送股/配股的除权除息记录）按口径换算：
+
+- **前复权（qfq，默认）**：以最新价为基准，把历史价向前调整，保证最新价不变，**回测/画图常用**。
+- **后复权（hfq）**：以上市首日为基准向后调整，**计算长期累计收益**用。
+- 实现：按除权除息事件计算每段复权因子，逐根 K 线乘以因子；`applyAdjust(klines, xdxr, "qfq"|"hfq"|"")`。该函数为纯函数，须有单测覆盖（见 §6.2）。
+
+> Service 层只依赖 `IMarketProvider` 接口，测试时用 mockgen 生成 mock，禁止单测中真实外呼（见 §6.2）。切换数据源仅需在依赖注入处替换 `NewGotdxProvider()` 为其他实现（如 Tushare）。
 
 ### M2 策略模块设计
 
@@ -742,7 +838,7 @@ mockgen -source=internal/repository/position.go -destination=internal/mock/posit
 | 模块 | 重点单测 | 关键用例 |
 |------|---------|---------|
 | M3 持仓 | `recalcPosition` 盈亏算法 | 买入均价、部分卖出已实现盈亏、清仓状态、费用税费、数量为负拒绝 |
-| M2 策略 | 指标条件解析、回测撮合 | 条件 and/or 组合、回测中断、参数非法 |
+| M2 策略 | 指标条件解析、回测撮合、**复权计算 `applyAdjust`** | 条件 and/or 组合、回测中断、参数非法、前复权/后复权/不复权口径正确 |
 | M1 行情 | 缓存命中/降级 | 缓存命中不调外部、外部失败返回快照 stale |
 | M4 风控 | 风险规则引擎 | 集中度超限、止损触发、等级判定 |
 | M5 任务 | cron 解析、交易日跳过、执行日志 | 非交易日跳过、失败记录、手动触发 |
@@ -857,7 +953,9 @@ PG_HOST=postgres PG_PORT=5432 PG_USER=postgres PG_PASSWORD=postgres PG_DB=warden
 REDIS_HOST=redis REDIS_PORT=6379 REDIS_PASSWORD=redis123
 # 外部集成（也可走 M7 用户级配置覆盖）
 LLM_BASE_URL= LLM_API_KEY= LLM_MODEL=
-MARKET_PROVIDER= MARKET_API_KEY=
+MARKET_PROVIDER=gotdx          # gotdx(主力,直连通达信)|tushare
+MARKET_GOTDX_MAX_CONN=8        # gotdx 连接池大小
+TUSHARE_TOKEN=                 # 仅当 MARKET_PROVIDER=tushare 或用作补充校验时
 ```
 
 ### 7.3 中间件装配顺序
