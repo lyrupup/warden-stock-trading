@@ -14,6 +14,7 @@ type Config struct {
 	Market    MarketConfig   `mapstructure:"market"`
 	RateLimit RateLimit      `mapstructure:"ratelimit"`
 	Timeout   TimeoutConfig  `mapstructure:"timeout"`
+	Screen    ScreenConfig   `mapstructure:"screen"`
 	// ConfigEncKey 敏感配置 AES-GCM 主密钥，来自环境变量 CONFIG_ENC_KEY，不入库不入仓。
 	ConfigEncKey string `mapstructure:"config_enc_key"`
 }
@@ -58,6 +59,14 @@ type RateLimit struct {
 
 type TimeoutConfig struct {
 	Seconds int `mapstructure:"seconds"`
+}
+
+// ScreenConfig 量化粗筛批处理参数。
+// Concurrency：单次粗筛内并发拉取 K 线 / 评估规则的协程数，建议不超过 market.gotdx_max_conn。
+// TimeoutSeconds：粗筛接口级超时（覆盖全局 timeout.seconds），可单独放宽以容纳批量行情拉取。
+type ScreenConfig struct {
+	Concurrency    int `mapstructure:"concurrency"`
+	TimeoutSeconds int `mapstructure:"timeout_seconds"`
 }
 
 // Load 读取配置。path 为空时按 ./config/config.yaml 与 ./config.yaml 搜索。
@@ -112,6 +121,8 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("ratelimit.rps", 100)
 	v.SetDefault("ratelimit.burst", 200)
 	v.SetDefault("timeout.seconds", 10)
+	v.SetDefault("screen.concurrency", 8)
+	v.SetDefault("screen.timeout_seconds", 60)
 	v.SetDefault("config_enc_key", "")
 }
 
@@ -133,5 +144,7 @@ func bindEnv(v *viper.Viper) {
 	_ = v.BindEnv("redis.db", "REDIS_DB")
 	_ = v.BindEnv("market.provider", "MARKET_PROVIDER")
 	_ = v.BindEnv("market.gotdx_max_conn", "MARKET_GOTDX_MAX_CONN")
+	_ = v.BindEnv("screen.concurrency", "SCREEN_CONCURRENCY")
+	_ = v.BindEnv("screen.timeout_seconds", "SCREEN_TIMEOUT_SECONDS")
 	_ = v.BindEnv("config_enc_key", "CONFIG_ENC_KEY")
 }

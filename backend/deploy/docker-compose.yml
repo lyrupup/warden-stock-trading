@@ -72,6 +72,9 @@ services:
       REDIS_PASSWORD: redis123
       MARKET_PROVIDER: gotdx
       MARKET_GOTDX_MAX_CONN: 8
+      # M2 量化粗筛批处理（详见 BACKEND.md §7.2 / §M2）
+      SCREEN_CONCURRENCY: 8
+      SCREEN_TIMEOUT_SECONDS: 60
     ports:
       - "8080:8080"
 

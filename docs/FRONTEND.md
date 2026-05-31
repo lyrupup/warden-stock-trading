@@ -324,6 +324,9 @@ export function useWatchlistQuotes() {
 - 策略 CRUD + 复制 + 标签分类 + 搜索；支持从**内置模板**（短线均线多头 / 中长线震荡）一键创建。
 - 策略详情分 Tab：**基本信息/描述**（Markdown 编辑）、**量化指标定义**（因子条件构造器）、**选股粗筛**（本期核心，股票池选择 + 运行 + 候选结果表）、**skill.md**（Markdown 编辑器 + 版本记录）、**回测**（后续迭代）。
 - **量化指标构造器**：可视化增删规则行，每行为「左因子 · 操作符 · 右值（因子或常量）」，可选因子来自 `/strategies/indicators/catalog`（按因子动态渲染参数：均线周期、排列周期组、乖离周期、振幅阈值/连续天数等），支持「与/或」分组嵌套，输出与后端一致的 `TIndicatorGroup` JSON。
+  - **参数标签前缀**：每个参数输入框前以灰色短标签（`周期 / 周期组 / 方向 / 容差 / 阈值% / 天数 / 字段 / 值`）提示语义，长文描述走 `title` tooltip（取自 catalog `desc`）。映射表 `paramLabel(key)` 维护在 `factor-utils.ts`，避免裸数字/枚举令非开发用户无法识别。
+  - **方向枚举文案**：`bull / bear` 在构造器中显示为「多头（严格递减）/ 空头（严格递增）」（`directionLabel`），与 `describeFactor` 的多/空表述对齐。后端 enum 仍是 `bull/bear`，仅前端翻译。
+  - **K 线字段枚举文案**：`close/open/...` 通过 `fieldLabel` 渲染为「收盘价/开盘价/最高价/最低价/前收盘/成交量/成交额/涨跌幅」，因子名「原始字段」覆盖为「K 线字段（开高低收等）」。
 - **选股粗筛（F2.6）**：
   - 股票池选择器：全市场 / 指定板块 / 自选股 / 自定义代码（`TScreenUniverse`）。
   - 「运行粗筛」→ 异步任务，轮询状态（pending/running/done/failed），完成后用 `data-table` 展示**候选列表**（代码、名称、命中因子快照值如 MA5/MA10/MA20/乖离/振幅、匹配评分），命中规则高亮。
@@ -335,6 +338,12 @@ export function useWatchlistQuotes() {
 - 因子目录用 `useIndicatorCatalog`（TanStack Query，长缓存 `staleTime`），驱动构造器可选项与参数表单。
 - 粗筛任务异步：`runScreen` 返回 `taskId` → `use-screen-result` 轮询 `screen/:taskId` 直至 `done/failed`；候选量大时表格分页 + 排序（评分/各因子列）。
 - 候选因子快照为 decimal 字符串，经 `lib/decimal.ts` 的 `toNumber`/`coerceDecimalFields` 转换后再格式化展示，涨跌/乖离正负用 `getQuoteColor` 着色。
+- **因子展示分类**（`candidate-table.tsx` 中的 `factorMeta`）：候选表按因子 key 推断显示类型，避免布尔 / 百分比 / 倍数被一锅炖成无单位小数：
+  - `bool`（`ma_align_*`、`amplitude_streak`）：后端用 1/0 表示，UI 渲染为 ✓/✗，✓ 走 `text-quote-up`、✗ 走 `text-muted-foreground`；列居中。
+  - `percent`（`bias*`、`amplitude`、`pct_change_*`）：后端值已乘 100，UI 追加 `%` 后缀（如 `7.72%`）。
+  - `ratio`（`vol_ratio_*`）：保留两位小数、不加单位。
+  - `number`（`ma*`、`close` 等）：`formatPrice(v, 2)` 渲染。
+  排序按 accessor 原始数值，不会被显示文本（✓/✗ 或 `%` 后缀）扰动。
 - skill.md 编辑用 `markdown-editor`，保存生成新版本（前端记录版本号，内容存后端）。
 - 模块结构：`features/strategy/{components/indicator-builder, components/screen-panel, components/candidate-table, hooks/use-indicator-catalog, hooks/use-screen-result, api.ts, types.ts}`。
 

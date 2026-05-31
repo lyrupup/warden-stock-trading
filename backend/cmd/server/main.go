@@ -49,7 +49,10 @@ func main() {
 	marketSvc := service.NewMarketService(provider, watchRepo, quoteRepo, quoteCache)
 	marketHandler := handler.NewMarketHandler(marketSvc)
 
-	strategySvc := service.NewStrategyService(strategyRepo, screenRepo, watchRepo, provider)
+	strategySvc := service.NewStrategyService(
+		strategyRepo, screenRepo, watchRepo, provider,
+		service.WithScreenConcurrency(cfg.Screen.Concurrency),
+	)
 	strategyHandler := handler.NewStrategyHandler(strategySvc)
 
 	r := router.New(cfg, router.Handlers{Market: marketHandler, Strategy: strategyHandler})
@@ -77,14 +80,20 @@ func initDB(cfg *config.Config) *gorm.DB {
 		return nil
 	}
 	// 开发期自动迁移核心表（生产以 deploy/init.sql 为准）。
-	if mErr := db.AutoMigrate(
+	// 注意：必须逐 model 调用，单个 model 的索引/约束差异不应阻断后续表的创建，
+	//（例如 init.sql 中 users.username 使用匿名 UNIQUE 时，GORM 想 DROP "uni_users_username" 会失败，
+	// 一次性传入所有 model 会导致后面的 strategy_screen_results 等表静默漏建）。
+	models := []any{
 		&model.User{}, &model.WatchlistItem{},
 		&model.IndexQuote{}, &model.StockQuote{},
 		&model.Position{}, &model.Trade{},
 		&model.Strategy{}, &model.StrategyIndicator{},
 		&model.StrategySkill{}, &model.StrategyScreenResult{},
-	); mErr != nil {
-		slog.Warn("AutoMigrate 失败", "error", mErr)
+	}
+	for _, m := range models {
+		if mErr := db.AutoMigrate(m); mErr != nil {
+			slog.Warn("AutoMigrate 单表失败（已跳过，继续后续表）", "model", fmt.Sprintf("%T", m), "error", mErr)
+		}
 	}
 	slog.Info("PostgreSQL 已连接")
 	return db

@@ -164,6 +164,42 @@ func TestStrategyService_PreviewScreen_InvalidIndicator(t *testing.T) {
 	assert.ErrorIs(t, err, errcode.ErrIndicatorInvalid)
 }
 
+// TestStrategyService_PreviewScreen_Concurrent 并发拉 K 线时，候选聚合不丢、不串台、不死锁。
+// 池中 5 命中 + 3 不命中，限制并发度 = 2，结果应为 5 个候选，且评分按 desc 排序。
+func TestStrategyService_PreviewScreen_Concurrent(t *testing.T) {
+	ctrl := gomock.NewController(t)
+	defer ctrl.Finish()
+
+	repo := mock.NewMockStrategyRepository(ctrl)
+	screenRepo := mock.NewMockScreenResultRepository(ctrl)
+	watchRepo := mock.NewMockWatchlistRepository(ctrl)
+	provider := mock.NewMockIMarketProvider(ctrl)
+
+	hit := []string{"600519", "601318", "000858", "002594", "300750"}
+	miss := []string{"000001", "000002", "000063"}
+	for _, c := range hit {
+		provider.EXPECT().Kline(gomock.Any(), c, "day", "qfq").Return(bullKlines(30), nil)
+	}
+	for _, c := range miss {
+		provider.EXPECT().Kline(gomock.Any(), c, "day", "qfq").Return(flatKlines(30), nil)
+	}
+	provider.EXPECT().Quotes(gomock.Any(), gomock.Any()).Return(nil, nil).AnyTimes()
+
+	codes := append(append([]string{}, hit...), miss...)
+	svc := service.NewStrategyService(repo, screenRepo, watchRepo, provider, service.WithScreenConcurrency(2))
+	res, err := svc.PreviewScreen(context.Background(), 1, &request.PreviewScreenReq{
+		ScreenReq:  request.ScreenReq{Universe: request.Universe{Type: "codes", Codes: codes}},
+		Indicators: bullStrategyGroup(),
+	})
+	assert.NoError(t, err)
+	assert.Equal(t, len(codes), res.UniverseCount)
+	assert.Equal(t, 5, res.MatchedCount)
+	assert.Len(t, res.Candidates, 5)
+	for i := 1; i < len(res.Candidates); i++ {
+		assert.True(t, res.Candidates[i-1].Score.GreaterThanOrEqual(res.Candidates[i].Score), "候选应按 score 降序")
+	}
+}
+
 // TestStrategyService_Screen_UnsupportedUniverse 全市场池暂不支持。
 func TestStrategyService_Screen_UnsupportedUniverse(t *testing.T) {
 	ctrl := gomock.NewController(t)

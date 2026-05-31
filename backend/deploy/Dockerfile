@@ -1,7 +1,10 @@
 # ---- 构建阶段 ----
-FROM golang:1.24-alpine AS builder
+# go.mod 要求 Go 1.26（gotdx 依赖）；GOTOOLCHAIN=auto 兜底自动拉取匹配工具链。
+FROM golang:1.26-alpine AS builder
 
 WORKDIR /src
+
+ENV GOTOOLCHAIN=auto
 
 # 先拷贝 go.mod/go.sum 以利用层缓存
 COPY go.mod go.sum ./
@@ -9,9 +12,10 @@ RUN go mod download
 
 COPY . .
 
-# 纯 Go 静态编译（Linux 下无需 cgo；默认 stub 行情源，gotdx 见 README 待办）
+# 纯 Go 静态编译（Linux 下无需 cgo）。
+# 启用 -tags gotdx 接入真实通达信行情源，与 compose 的 MARKET_PROVIDER=gotdx 对应。
 ENV CGO_ENABLED=0 GOOS=linux
-RUN go build -trimpath -ldflags="-s -w" -o /out/warden ./cmd/server
+RUN go build -tags gotdx -trimpath -ldflags="-s -w" -o /out/warden ./cmd/server
 
 # ---- 运行阶段 ----
 FROM alpine:3.20

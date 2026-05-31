@@ -1,6 +1,13 @@
 import { describe, expect, it } from "vitest";
 import type { TIndicatorCatalogItem } from "../types";
-import { defaultFactor, describeFactor, isBoolFactor } from "./factor-utils";
+import {
+  defaultFactor,
+  describeFactor,
+  directionLabel,
+  fieldLabel,
+  isBoolFactor,
+  paramLabel,
+} from "./factor-utils";
 
 const catalog: TIndicatorCatalogItem[] = [
   {
@@ -62,5 +69,45 @@ describe("isBoolFactor", () => {
     expect(isBoolFactor("ma_align")).toBe(true);
     expect(isBoolFactor("amplitude_streak")).toBe(true);
     expect(isBoolFactor("ma")).toBe(false);
+  });
+});
+
+describe("paramLabel", () => {
+  it("常用参数走中文短标签", () => {
+    expect(paramLabel("period")).toBe("周期");
+    expect(paramLabel("periods")).toBe("周期组");
+    expect(paramLabel("eps")).toBe("容差");
+    expect(paramLabel("threshold")).toBe("阈值%");
+    expect(paramLabel("days")).toBe("天数");
+    expect(paramLabel("direction")).toBe("方向");
+    expect(paramLabel("field")).toBe("字段");
+  });
+
+  it("未知 key 退回原始 key", () => {
+    expect(paramLabel("unknown")).toBe("unknown");
+  });
+});
+
+describe("directionLabel", () => {
+  it("bull / bear 映射到业务友好文案", () => {
+    expect(directionLabel("bull")).toBe("多头（严格递减）");
+    expect(directionLabel("bear")).toBe("空头（严格递增）");
+  });
+
+  it("未知方向退回原值", () => {
+    expect(directionLabel("xyz")).toBe("xyz");
+  });
+});
+
+describe("fieldLabel", () => {
+  it("K 线字段枚举值映射到中文", () => {
+    expect(fieldLabel("close")).toBe("收盘价");
+    expect(fieldLabel("prev_close")).toBe("前收盘");
+    expect(fieldLabel("change_percent")).toBe("涨跌幅");
+  });
+
+  it("空值退回'字段'，未知字段退回原值", () => {
+    expect(fieldLabel()).toBe("字段");
+    expect(fieldLabel("unknown")).toBe("unknown");
   });
 });

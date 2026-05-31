@@ -34,5 +34,12 @@ ratelimit:
 timeout:
   seconds: 10
 
+# 量化粗筛批处理（M2）
+# concurrency: 单次粗筛内并发拉取 K 线 / 评估规则的协程数，建议 ≤ market.gotdx_max_conn
+# timeout_seconds: 粗筛接口级超时，覆盖全局 timeout.seconds（行情批量拉取耗时较长，单独放宽）
+screen:
+  concurrency: 8
+  timeout_seconds: 60
+
 # 敏感配置 AES-GCM 主密钥，建议仅用环境变量 CONFIG_ENC_KEY 注入
 config_enc_key: ""

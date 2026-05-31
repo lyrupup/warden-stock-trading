@@ -114,6 +114,8 @@ func GetUserID(c *gin.Context) uint { v, _ := c.Get("user_id"); return v.(uint) 
 - 业务表统一含 `user_id BIGINT NOT NULL`，并建 `idx_<table>_user_id`。
 - 金额/价格用 `NUMERIC(20,4)`，比率用 `NUMERIC(10,4)`，避免浮点误差。
 - 敏感字段（API Key）密文存储（AES-GCM），表中存 `*_cipher`。
+- **唯一约束命名**：`UNIQUE` 必须使用命名约束 `CONSTRAINT uni_<table>_<column> UNIQUE (...)`，与 GORM `uniqueIndex` tag 推断的约束名严格对齐；否则 `AutoMigrate` 启动期会 DROP 一个不存在的约束（SQLSTATE 42704）而触发单表迁移失败。
+- **AutoMigrate 容错**：`cmd/server/main.go` 中按 model **逐个**调用 `db.AutoMigrate(m)`，单表失败时 `slog.Warn` 跳过、不阻断后续表迁移（防止一表索引/约束差异导致后续业务表静默漏建，例如 `strategy_screen_results` 缺失会让粗筛接口 500）。生产以 `deploy/init.sql` 为准。
 
 ### 3.2 ER 概览
 
@@ -141,16 +143,20 @@ users 1──N user_configs                  (分组键值, 敏感加密)
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 用户（多用户预留）
+-- username 必须使用命名约束 uni_users_username，
+-- 才能与 GORM `uniqueIndex` tag 默认推断的约束名对齐，
+-- 避免 AutoMigrate 启动期 DROP CONSTRAINT 失败导致后续表静默漏建。
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
-    username VARCHAR(64) NOT NULL UNIQUE,
+    username VARCHAR(64) NOT NULL,
     password_hash VARCHAR(128) NOT NULL DEFAULT '',
     nickname VARCHAR(64) NOT NULL DEFAULT '',
     avatar VARCHAR(256) NOT NULL DEFAULT '',
     status SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT uni_users_username UNIQUE (username)
 );
 -- 预置默认用户（单用户模式）
 INSERT INTO users (id, username, nickname) VALUES (1, 'default', '守望者')
@@ -948,7 +954,8 @@ POST /strategies/:id/screen
   GET /strategies/:id/screen/:taskId → 轮询结果
 ```
 
-- **超时/中断**：编排与每只拉取都 `select { case <-ctx.Done(): return ctx.Err() }`，配合 Timeout 中间件传播。
+- **超时/中断**：编排与每只拉取都 `select { case <-ctx.Done(): return ctx.Err() }`，配合 Timeout 中间件传播。Timeout 中间件按路由模式做最长前缀覆盖，粗筛接口走 `SCREEN_TIMEOUT_SECONDS`（默认 60s），而非全局 CRUD 默认（10s）。
+- **并发**：`screen` 用「信号量 channel + WaitGroup」按 `SCREEN_CONCURRENCY` 限流（默认 8，与 `MARKET_GOTDX_MAX_CONN` 对齐）并发拉 K 线 / 跑 `rule.Eval`，单只拉取/评估失败跳过；指标配置类错误（未知因子/op 非法）作为致命错误立刻终止整轮并向上抛 `21002`。注入方式：`service.NewStrategyService(..., service.WithScreenConcurrency(cfg.Screen.Concurrency))`，测试可通过 option 直接覆盖并发度做表驱动断言。
 - **性能**：全市场（~5000 只）实时逐只拉 K 线较重，故 V1 给两条路径：
   - 默认 **on-demand**：worker pool 并发 + Redis K 线缓存 + 候选 `limit`，适合自选/板块/中小池。
   - 可选 **快照加速**：M5 盘后定时任务批量预算 `stock_indicator_snapshots`，全市场粗筛直接 SQL 过滤常用因子（MA/排列/乖离/振幅），命中后再回算扩展因子，规避海量实时外呼。
@@ -1143,11 +1150,22 @@ LLM_BASE_URL= LLM_API_KEY= LLM_MODEL=
 MARKET_PROVIDER=gotdx          # gotdx(主力,直连通达信)|tushare
 MARKET_GOTDX_MAX_CONN=8        # gotdx 连接池大小
 TUSHARE_TOKEN=                 # 仅当 MARKET_PROVIDER=tushare 或用作补充校验时
+SCREEN_CONCURRENCY=8           # 量化粗筛并发度，建议 ≤ MARKET_GOTDX_MAX_CONN
+SCREEN_TIMEOUT_SECONDS=60      # 粗筛接口级超时（覆盖全局 timeout.seconds），见 7.3
 ```
 
 ### 7.3 中间件装配顺序
 
 `Recovery → Logger → CORS → RateLimit → Timeout(context) → Auth → 业务路由`。所有 DB 操作 `WithContext(ctx)`，事务回调返回 error 即回滚，保证超时/取消传播。
+
+**Timeout 路径级覆盖**：`middleware.Timeout(default, overrides)` 第二个参数支持按 gin 路由模式（`c.FullPath()`）做**最长前缀匹配**覆盖。批量行情/AI 流式等慢接口在 `router.timeoutOverrides()` 中显式声明，避免被 CRUD 级默认值（10s）误中断。当前覆盖：
+
+| 路径前缀 | 默认 | 覆盖 | 说明 |
+|---------|------|------|------|
+| `/api/strategies/screen/preview` | 10s | `SCREEN_TIMEOUT_SECONDS`（60s） | 同步预览，批量拉 K 线 |
+| `/api/strategies/:id/screen` | 10s | `SCREEN_TIMEOUT_SECONDS`（60s） | 含 `/latest`、`/:taskId` 同族查询 |
+
+**粗筛并发**：`screen` 内部用「信号量 channel + WaitGroup」按 `SCREEN_CONCURRENCY` 限流并发拉取 K 线 / 规则评估，单只失败跳过、不中断整轮；仅指标配置类错误（未知因子/op 非法）视为致命错误向上抛。并发度建议 ≤ `MARKET_GOTDX_MAX_CONN`，超出会被连接池排队，反而拖慢整体。
 
 ---
 

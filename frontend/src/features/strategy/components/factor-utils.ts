@@ -94,6 +94,35 @@ export function fieldLabel(field?: string): string {
   return field ? (FIELD_LABELS[field] ?? field) : "字段";
 }
 
+/**
+ * 因子参数 key → 构造器中显示在输入框前的小标签。
+ * 后端因子目录返回的 `desc` 是较长的说明文案（用作 tooltip/aria），
+ * 这里给一个精炼标签，避免输入框旁边一片空白让用户不知道在填什么。
+ */
+const PARAM_LABELS: Record<string, string> = {
+  period: "周期",
+  periods: "周期组",
+  direction: "方向",
+  field: "字段",
+  threshold: "阈值%",
+  days: "天数",
+  eps: "容差",
+};
+
+export function paramLabel(key: string): string {
+  return PARAM_LABELS[key] ?? key;
+}
+
+/** 排列方向枚举 → 业务友好文案。后端 enum 仍是 bull/bear，前端做翻译。 */
+const DIRECTION_LABELS: Record<string, string> = {
+  bull: "多头（严格递减）",
+  bear: "空头（严格递增）",
+};
+
+export function directionLabel(v: string): string {
+  return DIRECTION_LABELS[v] ?? v;
+}
+
 /** 因子是否产出布尔值（布尔因子默认与 const(true) 比较）。 */
 export function isBoolFactor(type: TFactorType): boolean {
   return type === "ma_align" || type === "amplitude_streak";

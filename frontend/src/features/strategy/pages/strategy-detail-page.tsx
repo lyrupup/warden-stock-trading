@@ -19,10 +19,10 @@ import type { TIndicatorCatalogItem, TIndicatorGroup } from "../types";
 type TTab = "indicators" | "screen" | "skill" | "info";
 
 const TABS: { key: TTab; label: string }[] = [
+  { key: "info", label: "基本信息" },
   { key: "indicators", label: "指标定义" },
   { key: "screen", label: "选股粗筛" },
   { key: "skill", label: "skill.md" },
-  { key: "info", label: "基本信息" },
 ];
 
 const emptyGroup: TIndicatorGroup = { logic: "and", rules: [] };
@@ -33,7 +33,7 @@ export function StrategyDetailPage() {
   const navigate = useNavigate();
   const strategyId = Number(id);
 
-  const [tab, setTab] = useState<TTab>("indicators");
+  const [tab, setTab] = useState<TTab>("info");
   const detail = useStrategy(Number.isFinite(strategyId) ? strategyId : undefined);
   const catalog = useIndicatorCatalog();
 

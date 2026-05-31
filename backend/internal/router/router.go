@@ -30,7 +30,10 @@ func New(cfg *config.Config, h Handlers) *gin.Engine {
 	r.Use(middleware.Logger())
 	r.Use(middleware.CORS())
 	r.Use(middleware.RateLimit(cfg.RateLimit.RPS, cfg.RateLimit.Burst))
-	r.Use(middleware.Timeout(time.Duration(cfg.Timeout.Seconds) * time.Second))
+	r.Use(middleware.Timeout(
+		time.Duration(cfg.Timeout.Seconds)*time.Second,
+		timeoutOverrides(cfg),
+	))
 
 	// 健康检查（不鉴权）。
 	r.GET("/health", func(c *gin.Context) {
@@ -59,6 +62,20 @@ func registerMarketRoutes(api *gin.RouterGroup, h *handler.MarketHandler) {
 		m.GET("/stocks/:code", h.StockDetail)
 		m.GET("/stocks/:code/kline", h.Kline)
 		m.GET("/search", h.Search)
+	}
+}
+
+// timeoutOverrides 按 gin 路由模式声明慢接口的超时覆盖，
+// 由 middleware.Timeout 按最长前缀匹配生效。
+// 粗筛/预览需批量拉行情，远超普通 CRUD 的 10s 默认值。
+func timeoutOverrides(cfg *config.Config) map[string]time.Duration {
+	screenTimeout := time.Duration(cfg.Screen.TimeoutSeconds) * time.Second
+	if screenTimeout <= 0 {
+		return nil
+	}
+	return map[string]time.Duration{
+		"/api/strategies/screen/preview": screenTimeout,
+		"/api/strategies/:id/screen":     screenTimeout, // 覆盖 :id/screen 及 :id/screen/*
 	}
 }
 

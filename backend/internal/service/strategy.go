@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/shopspring/decimal"
@@ -23,6 +24,8 @@ const (
 	defaultScreenLimit = 200
 	// klineLookback 拉取的 K 线根数，需足够计算长周期均线 + 连续振幅。
 	klineLookback = 120
+	// defaultScreenConcurrency 粗筛内并发拉取 K 线的默认协程数，与 gotdx 连接池默认值对齐。
+	defaultScreenConcurrency = 8
 )
 
 // StrategyService M2 选股策略 + 量化粗筛业务接口。
@@ -48,10 +51,19 @@ type StrategyService interface {
 }
 
 type strategyService struct {
-	repo       repository.StrategyRepository
-	screenRepo repository.ScreenResultRepository
-	watchRepo  repository.WatchlistRepository
-	provider   market.IMarketProvider
+	repo              repository.StrategyRepository
+	screenRepo        repository.ScreenResultRepository
+	watchRepo         repository.WatchlistRepository
+	provider          market.IMarketProvider
+	screenConcurrency int
+}
+
+// StrategyOption 策略服务可选注入项，保持 NewStrategyService 向后兼容。
+type StrategyOption func(*strategyService)
+
+// WithScreenConcurrency 配置粗筛并发度，<=0 时使用 defaultScreenConcurrency。
+func WithScreenConcurrency(n int) StrategyOption {
+	return func(s *strategyService) { s.screenConcurrency = n }
 }
 
 // NewStrategyService 注入依赖构造策略业务。
@@ -60,8 +72,16 @@ func NewStrategyService(
 	screenRepo repository.ScreenResultRepository,
 	watchRepo repository.WatchlistRepository,
 	provider market.IMarketProvider,
+	opts ...StrategyOption,
 ) StrategyService {
-	return &strategyService{repo: repo, screenRepo: screenRepo, watchRepo: watchRepo, provider: provider}
+	s := &strategyService{repo: repo, screenRepo: screenRepo, watchRepo: watchRepo, provider: provider}
+	for _, opt := range opts {
+		opt(s)
+	}
+	if s.screenConcurrency <= 0 {
+		s.screenConcurrency = defaultScreenConcurrency
+	}
+	return s
 }
 
 func (s *strategyService) List(ctx context.Context, userID uint, kw, tag string) ([]response.Strategy, error) {
@@ -265,7 +285,11 @@ func (s *strategyService) PreviewScreen(ctx context.Context, userID uint, req *r
 	return result, nil
 }
 
-// screen 是粗筛核心：解析股票池 → 逐只拉 K 线 → 规则匹配 → 收集候选 → 评分排序截断。
+// screen 是粗筛核心：解析股票池 → 并发拉 K 线 → 规则匹配 → 聚合候选 → 评分排序截断。
+//
+// 并发模型：信号量 channel 限流 + WaitGroup 同步，单只标的拉取/评估失败不中断整轮；
+// 仅指标配置类错误（未知因子/op 非法）作为致命错误中止并向上抛出。
+// 外层 ctx 取消会即时退出工作循环，下游 provider.Kline 会感知 ctx.Done 主动放弃。
 func (s *strategyService) screen(ctx context.Context, group rule.RuleGroup, req *request.ScreenReq, userID uint) (*response.ScreenResult, error) {
 	codes, names, err := s.resolveUniverse(ctx, userID, req.Universe)
 	if err != nil {
@@ -279,36 +303,88 @@ func (s *strategyService) screen(ctx context.Context, group rule.RuleGroup, req 
 		limit = defaultScreenLimit
 	}
 
-	cands := make([]response.ScreenCandidate, 0, 16)
+	concurrency := s.screenConcurrency
+	if concurrency <= 0 {
+		concurrency = defaultScreenConcurrency
+	}
+	if concurrency > len(codes) {
+		concurrency = len(codes)
+	}
+
+	var (
+		wg         sync.WaitGroup
+		mu         sync.Mutex
+		cands      = make([]response.ScreenCandidate, 0, 16)
+		fatalErr   error
+		sem        = make(chan struct{}, concurrency)
+	)
+
 	for _, code := range codes {
 		select {
 		case <-ctx.Done():
-			return nil, errcode.ErrTimeout.Wrap(ctx.Err())
-		default:
+			// 外层超时/取消：停止派发新任务（已派发的会在自身分支感知 ctx 退出）。
+			goto done
+		case sem <- struct{}{}:
 		}
-		klines, kErr := s.provider.Kline(ctx, code, "day", "qfq")
-		if kErr != nil || len(klines) == 0 {
-			continue // 拉取失败的标的跳过，不中断整轮
+
+		mu.Lock()
+		stop := fatalErr != nil
+		mu.Unlock()
+		if stop {
+			<-sem
+			break
 		}
-		res, eErr := rule.Eval(group, factor.Series{Bars: klines})
-		if eErr != nil {
-			// 指标配置错误（未知因子/op 非法），整轮一致，直接暴露。
-			return nil, errcode.ErrIndicatorInvalid.Wrap(eErr)
-		}
-		if !res.Matched {
-			continue
-		}
-		factors := make(map[string]decimal.Decimal, len(res.Snapshot))
-		for k, v := range res.Snapshot {
-			factors[k] = v.Decimal().Round(4)
-		}
-		cands = append(cands, response.ScreenCandidate{
-			StockCode: code,
-			StockName: names[code],
-			Score:     decimal.NewFromFloat(res.Score()).Round(4),
-			Factors:   factors,
-			Matched:   res.HitRules,
-		})
+
+		wg.Add(1)
+		go func(code string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+
+			if err := ctx.Err(); err != nil {
+				return
+			}
+			klines, kErr := s.provider.Kline(ctx, code, "day", "qfq")
+			if kErr != nil || len(klines) == 0 {
+				return // 单只失败跳过，不中断整轮
+			}
+			res, eErr := rule.Eval(group, factor.Series{Bars: klines})
+			if eErr != nil {
+				// 指标配置错误（未知因子/op 非法），整轮一致，作为致命错误抛出。
+				mu.Lock()
+				if fatalErr == nil {
+					fatalErr = errcode.ErrIndicatorInvalid.Wrap(eErr)
+				}
+				mu.Unlock()
+				return
+			}
+			if !res.Matched {
+				return
+			}
+			factors := make(map[string]decimal.Decimal, len(res.Snapshot))
+			for k, v := range res.Snapshot {
+				factors[k] = v.Decimal().Round(4)
+			}
+			cand := response.ScreenCandidate{
+				StockCode: code,
+				StockName: names[code],
+				Score:     decimal.NewFromFloat(res.Score()).Round(4),
+				Factors:   factors,
+				Matched:   res.HitRules,
+			}
+			mu.Lock()
+			cands = append(cands, cand)
+			mu.Unlock()
+		}(code)
+	}
+
+done:
+	wg.Wait()
+
+	if fatalErr != nil {
+		return nil, fatalErr
+	}
+	if err := ctx.Err(); err != nil {
+		return nil, errcode.ErrTimeout.Wrap(err)
 	}
 
 	sort.SliceStable(cands, func(i, j int) bool { return cands[i].Score.GreaterThan(cands[j].Score) })

@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/cn";
@@ -8,7 +9,15 @@ import type {
   TIndicatorGroup,
   TIndicatorRule,
 } from "../types";
-import { OPS, applyParam, defaultFactor, isBoolFactor } from "./factor-utils";
+import {
+  OPS,
+  applyParam,
+  defaultFactor,
+  directionLabel,
+  fieldLabel,
+  isBoolFactor,
+  paramLabel,
+} from "./factor-utils";
 
 type TIndicatorBuilderProps = {
   value: TIndicatorGroup;
@@ -18,6 +27,32 @@ type TIndicatorBuilderProps = {
 
 const selectClass =
   "h-9 rounded-md border border-input bg-background px-2 text-sm shadow-sm focus:outline-none focus:ring-1 focus:ring-ring";
+
+/**
+ * 参数槽：输入框前面带一个小灰字标签 + 全局 tooltip（来自因子目录 desc）。
+ * 解决非开发用户看不懂裸数字/枚举的可发现性问题。
+ */
+function ParamSlot({
+  label,
+  title,
+  children,
+}: {
+  label: string;
+  title?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="inline-flex items-center gap-1 text-xs text-muted-foreground" title={title}>
+      <span>{label}</span>
+      {children}
+    </label>
+  );
+}
+
+/** 因子下拉中部分类型名做友好化覆盖（catalog 原文偏术语）。 */
+const FACTOR_NAME_OVERRIDE: Partial<Record<TFactorType, string>> = {
+  field: "K 线字段（开高低收等）",
+};
 
 /**
  * 量化指标构造器（FRONTEND.md §M2）：可视化增删规则行，每行「左因子 op 右值」，
@@ -157,7 +192,11 @@ function FactorEditor({ expr, catalog, allowConst, boolOnly, onChange }: TFactor
     );
   }
 
-  const options: { type: TFactorType; name: string }[] = catalog.map((c) => ({ type: c.type, name: c.name }));
+  const options: { type: TFactorType; name: string; desc?: string }[] = catalog.map((c) => ({
+    type: c.type,
+    name: FACTOR_NAME_OVERRIDE[c.type] ?? c.name,
+    desc: c.description,
+  }));
   if (allowConst) options.push({ type: "const", name: "常量" });
 
   function setType(type: TFactorType) {
@@ -168,9 +207,14 @@ function FactorEditor({ expr, catalog, allowConst, boolOnly, onChange }: TFactor
 
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <select className={selectClass} value={expr.type} onChange={(e) => setType(e.target.value as TFactorType)}>
+      <select
+        className={selectClass}
+        value={expr.type}
+        onChange={(e) => setType(e.target.value as TFactorType)}
+        title={options.find((o) => o.type === expr.type)?.desc}
+      >
         {options.map((o) => (
-          <option key={o.type} value={o.type}>
+          <option key={o.type} value={o.type} title={o.desc}>
             {o.name}
           </option>
         ))}
@@ -190,17 +234,19 @@ function FactorEditor({ expr, catalog, allowConst, boolOnly, onChange }: TFactor
 function ConstInput({ expr, onChange }: { expr: TFactorExpr; onChange: (e: TFactorExpr) => void }) {
   const raw = typeof expr.value === "boolean" ? String(expr.value) : (expr.value ?? 0);
   return (
-    <Input
-      className="h-9 w-24"
-      value={String(raw)}
-      onChange={(e) => {
-        const v = e.target.value.trim();
-        if (v === "true") return onChange({ type: "const", value: true });
-        if (v === "false") return onChange({ type: "const", value: false });
-        const n = Number(v);
-        onChange({ type: "const", value: Number.isFinite(n) ? n : 0 });
-      }}
-    />
+    <ParamSlot label="值" title="阈值或参考值；布尔常量可填 true / false">
+      <Input
+        className="h-9 w-24"
+        value={String(raw)}
+        onChange={(e) => {
+          const v = e.target.value.trim();
+          if (v === "true") return onChange({ type: "const", value: true });
+          if (v === "false") return onChange({ type: "const", value: false });
+          const n = Number(v);
+          onChange({ type: "const", value: Number.isFinite(n) ? n : 0 });
+        }}
+      />
+    </ParamSlot>
   );
 }
 
@@ -218,36 +264,49 @@ function ParamInput({ paramKey, spec, expr, onChange }: TParamInputProps) {
     onChange(next);
   }
 
+  // 统一标签 + tooltip：标签短促可见，desc 走 title 提供详细解释。
+  const label = paramLabel(paramKey);
+
   if (spec.type === "enum") {
     const current = paramKey === "direction" ? (expr.direction ?? "bull") : (expr.field ?? "");
+    // direction（bull/bear）与 field（close/open/...）走业务友好文案，其他 enum 退回原值。
+    const renderOption = (v: string) => {
+      if (paramKey === "direction") return directionLabel(v);
+      if (paramKey === "field") return fieldLabel(v);
+      return v;
+    };
     return (
-      <select className={selectClass} value={current} onChange={(e) => update(e.target.value)} title={spec.desc}>
-        {(spec.enum ?? []).map((opt) => (
-          <option key={String(opt)} value={String(opt)}>
-            {String(opt)}
-          </option>
-        ))}
-      </select>
+      <ParamSlot label={label} title={spec.desc}>
+        <select className={selectClass} value={current} onChange={(e) => update(e.target.value)} title={spec.desc}>
+          {(spec.enum ?? []).map((opt) => (
+            <option key={String(opt)} value={String(opt)}>
+              {renderOption(String(opt))}
+            </option>
+          ))}
+        </select>
+      </ParamSlot>
     );
   }
 
   if (spec.type === "int[]") {
     const current = (expr.periods ?? []).join(",");
     return (
-      <Input
-        className={cn("h-9 w-28")}
-        value={current}
-        title={spec.desc}
-        placeholder="5,10,20"
-        onChange={(e) =>
-          update(
-            e.target.value
-              .split(",")
-              .map((s) => Number(s.trim()))
-              .filter((n) => Number.isFinite(n) && n > 0),
-          )
-        }
-      />
+      <ParamSlot label={label} title={spec.desc}>
+        <Input
+          className={cn("h-9 w-28")}
+          value={current}
+          title={spec.desc}
+          placeholder="5,10,20"
+          onChange={(e) =>
+            update(
+              e.target.value
+                .split(",")
+                .map((s) => Number(s.trim()))
+                .filter((n) => Number.isFinite(n) && n > 0),
+            )
+          }
+        />
+      </ParamSlot>
     );
   }
 
@@ -263,12 +322,14 @@ function ParamInput({ paramKey, spec, expr, onChange }: TParamInputProps) {
             ? expr.eps
             : undefined;
   return (
-    <Input
-      className="h-9 w-20"
-      type="number"
-      value={numVal ?? ""}
-      title={spec.desc}
-      onChange={(e) => update(e.target.value)}
-    />
+    <ParamSlot label={label} title={spec.desc}>
+      <Input
+        className="h-9 w-20"
+        type="number"
+        value={numVal ?? ""}
+        title={spec.desc}
+        onChange={(e) => update(e.target.value)}
+      />
+    </ParamSlot>
   );
 }

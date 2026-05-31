@@ -4,16 +4,20 @@
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 
 -- 用户（多用户预留）
+-- 约束名 uni_users_username 必须与 GORM `uniqueIndex` tag 推断的名字一致，
+-- 否则 AutoMigrate 启动期会尝试 DROP 该约束而触发 SQLSTATE 42704，
+-- 进而中断后续 model 的迁移（典型表现：strategy_screen_results 未建）。
 CREATE TABLE IF NOT EXISTS users (
     id BIGSERIAL PRIMARY KEY,
-    username VARCHAR(64) NOT NULL UNIQUE,
+    username VARCHAR(64) NOT NULL,
     password_hash VARCHAR(128) NOT NULL DEFAULT '',
     nickname VARCHAR(64) NOT NULL DEFAULT '',
     avatar VARCHAR(256) NOT NULL DEFAULT '',
     status SMALLINT NOT NULL DEFAULT 1,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ
+    deleted_at TIMESTAMPTZ,
+    CONSTRAINT uni_users_username UNIQUE (username)
 );
 -- 预置默认用户（单用户模式）
 INSERT INTO users (id, username, nickname) VALUES (1, 'default', '守望者')
