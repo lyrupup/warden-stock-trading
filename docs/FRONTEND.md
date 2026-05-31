@@ -187,6 +187,15 @@ export function createStrategyApi(api = httpClient) {
     update: (id: string, data: Partial<TCreateStrategyParams>) =>
       api.put(`strategies/${id}`, { json: data }).json<TStrategy>(),
     remove: (id: string) => api.delete(`strategies/${id}`).json<void>(),
+    // M2 量化粗筛
+    indicatorCatalog: () => api.get("strategies/indicators/catalog").json<TIndicatorCatalogItem[]>(),
+    templates: () => api.get("strategies/templates").json<TStrategyTemplate[]>(),
+    runScreen: (id: string, params: TScreenParams) =>
+      api.post(`strategies/${id}/screen`, { json: params }).json<{ taskId: string }>(),
+    screenResult: (id: string, taskId: string) =>
+      api.get(`strategies/${id}/screen/${taskId}`).json<TScreenResult>(),
+    previewScreen: (params: TScreenParams & { indicators: TIndicatorGroup }) =>
+      api.post("strategies/screen/preview", { json: params }).json<TScreenResult>(),
     runBacktest: (id: string, params: object) =>
       api.post(`strategies/${id}/backtest`, { json: params }).json<{ taskId: string }>(),
   };
@@ -312,15 +321,22 @@ export function useWatchlistQuotes() {
 **页面**：策略列表 `/strategies`、策略详情 `/strategies/:id`
 
 **核心功能**
-- 策略 CRUD + 复制 + 标签分类 + 搜索。
-- 策略详情分 Tab：**基本信息/描述**（Markdown 编辑）、**指标定义**（结构化条件构造器）、**skill.md**（Markdown 编辑器 + 版本记录）、**回测**（参数表单 + 结果图表）。
-- 指标条件构造器：可视化增删指标行（指标类型、操作符、阈值），支持「与/或」分组，输出结构化 JSON。
-- 回测：提交参数后轮询任务状态，完成后用 ECharts 渲染收益曲线 + 指标卡（收益率/最大回撤/胜率/夏普）。
+- 策略 CRUD + 复制 + 标签分类 + 搜索；支持从**内置模板**（短线均线多头 / 中长线震荡）一键创建。
+- 策略详情分 Tab：**基本信息/描述**（Markdown 编辑）、**量化指标定义**（因子条件构造器）、**选股粗筛**（本期核心，股票池选择 + 运行 + 候选结果表）、**skill.md**（Markdown 编辑器 + 版本记录）、**回测**（后续迭代）。
+- **量化指标构造器**：可视化增删规则行，每行为「左因子 · 操作符 · 右值（因子或常量）」，可选因子来自 `/strategies/indicators/catalog`（按因子动态渲染参数：均线周期、排列周期组、乖离周期、振幅阈值/连续天数等），支持「与/或」分组嵌套，输出与后端一致的 `TIndicatorGroup` JSON。
+- **选股粗筛（F2.6）**：
+  - 股票池选择器：全市场 / 指定板块 / 自选股 / 自定义代码（`TScreenUniverse`）。
+  - 「运行粗筛」→ 异步任务，轮询状态（pending/running/done/failed），完成后用 `data-table` 展示**候选列表**（代码、名称、命中因子快照值如 MA5/MA10/MA20/乖离/振幅、匹配评分），命中规则高亮。
+  - 「快速预览」：自选/小池走同步 `screen/preview`，便于边调参边看效果。
+  - 候选行操作：**加入自选**（复用 M1 接口）、**发起 AI 分析**（跳转 M6，携带 `strategyId + stockCode` 完成「粗筛 → AI 精筛」交接）。
 
 **实现要点**
+- 指标定义类型 `TIndicatorGroup`/`TIndicatorRule`/`TFactorExpr`，前后端共享同一 schema（zod 定义并导出类型，对齐 openapi `IndicatorGroup`），构造器渲染、提交、粗筛三处共用。
+- 因子目录用 `useIndicatorCatalog`（TanStack Query，长缓存 `staleTime`），驱动构造器可选项与参数表单。
+- 粗筛任务异步：`runScreen` 返回 `taskId` → `use-screen-result` 轮询 `screen/:taskId` 直至 `done/failed`；候选量大时表格分页 + 排序（评分/各因子列）。
+- 候选因子快照为 decimal 字符串，经 `lib/decimal.ts` 的 `toNumber`/`coerceDecimalFields` 转换后再格式化展示，涨跌/乖离正负用 `getQuoteColor` 着色。
 - skill.md 编辑用 `markdown-editor`，保存生成新版本（前端记录版本号，内容存后端）。
-- 回测任务异步：`runBacktest` 返回 `taskId` → `use-backtest-result` 轮询直至 `done/failed`。
-- 指标定义类型 `TStrategyIndicatorGroup`，前后端共享同一 schema（zod 定义并导出类型）。
+- 模块结构：`features/strategy/{components/indicator-builder, components/screen-panel, components/candidate-table, hooks/use-indicator-catalog, hooks/use-screen-result, api.ts, types.ts}`。
 
 ### M3 持仓记录（features/position）
 
