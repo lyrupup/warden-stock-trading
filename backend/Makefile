@@ -63,3 +63,5 @@ mock:
 	$(MOCKGEN) -source=internal/repository/watchlist.go -destination=internal/mock/watchlist_repository_mock.go -package=mock
 	$(MOCKGEN) -source=internal/repository/market_quote.go -destination=internal/mock/market_quote_repository_mock.go -package=mock
 	$(MOCKGEN) -source=internal/service/market.go -destination=internal/mock/market_service_mock.go -package=mock
+	$(MOCKGEN) -source=internal/repository/strategy.go -destination=internal/mock/strategy_repository_mock.go -package=mock
+	$(MOCKGEN) -source=internal/service/strategy.go -destination=internal/mock/strategy_service_mock.go -package=mock

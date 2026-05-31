@@ -12,9 +12,10 @@ import (
 	"warden/internal/middleware"
 )
 
-// Handlers 聚合各业务 Handler，便于注入与扩展（后续 M2~M7 在此追加）。
+// Handlers 聚合各业务 Handler，便于注入与扩展（后续 M3~M7 在此追加）。
 type Handlers struct {
-	Market *handler.MarketHandler
+	Market   *handler.MarketHandler
+	Strategy *handler.StrategyHandler
 }
 
 // New 创建 gin 引擎，按规范顺序装配中间件并挂载 /api 路由组。
@@ -40,6 +41,7 @@ func New(cfg *config.Config, h Handlers) *gin.Engine {
 	api.Use(middleware.Auth(cfg.JWT.Secret, cfg.App.SingleUserMode))
 
 	registerMarketRoutes(api, h.Market)
+	registerStrategyRoutes(api, h.Strategy)
 	return r
 }
 
@@ -57,5 +59,31 @@ func registerMarketRoutes(api *gin.RouterGroup, h *handler.MarketHandler) {
 		m.GET("/stocks/:code", h.StockDetail)
 		m.GET("/stocks/:code/kline", h.Kline)
 		m.GET("/search", h.Search)
+	}
+}
+
+func registerStrategyRoutes(api *gin.RouterGroup, h *handler.StrategyHandler) {
+	if h == nil {
+		return
+	}
+	g := api.Group("/strategies")
+	{
+		g.GET("", h.List)
+		g.POST("", h.Create)
+		// 静态路径需在 :id 之前声明，避免与参数路由冲突。
+		g.GET("/indicators/catalog", h.Catalog)
+		g.GET("/templates", h.Templates)
+		g.POST("/screen/preview", h.PreviewScreen)
+
+		g.GET("/:id", h.Get)
+		g.PUT("/:id", h.Update)
+		g.DELETE("/:id", h.Delete)
+		g.POST("/:id/copy", h.Copy)
+		g.PUT("/:id/indicators", h.UpdateIndicators)
+		g.GET("/:id/skill", h.GetSkill)
+		g.PUT("/:id/skill", h.SaveSkill)
+		g.POST("/:id/screen", h.RunScreen)
+		g.GET("/:id/screen/latest", h.ScreenLatest)
+		g.GET("/:id/screen/:taskId", h.ScreenResult)
 	}
 }

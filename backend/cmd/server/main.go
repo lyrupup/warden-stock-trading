@@ -38,6 +38,8 @@ func main() {
 
 	watchRepo := repository.NewWatchlistRepository(db)
 	quoteRepo := repository.NewMarketQuoteRepository(db)
+	strategyRepo := repository.NewStrategyRepository(db)
+	screenRepo := repository.NewScreenResultRepository(db)
 
 	var quoteCache service.QuoteCache
 	if redisCli != nil {
@@ -47,7 +49,10 @@ func main() {
 	marketSvc := service.NewMarketService(provider, watchRepo, quoteRepo, quoteCache)
 	marketHandler := handler.NewMarketHandler(marketSvc)
 
-	r := router.New(cfg, router.Handlers{Market: marketHandler})
+	strategySvc := service.NewStrategyService(strategyRepo, screenRepo, watchRepo, provider)
+	strategyHandler := handler.NewStrategyHandler(strategySvc)
+
+	r := router.New(cfg, router.Handlers{Market: marketHandler, Strategy: strategyHandler})
 
 	addr := fmt.Sprintf(":%d", cfg.App.Port)
 	slog.Info("守望者后端启动", "addr", addr, "single_user_mode", cfg.App.SingleUserMode, "market_provider", cfg.Market.Provider)
@@ -76,6 +81,8 @@ func initDB(cfg *config.Config) *gorm.DB {
 		&model.User{}, &model.WatchlistItem{},
 		&model.IndexQuote{}, &model.StockQuote{},
 		&model.Position{}, &model.Trade{},
+		&model.Strategy{}, &model.StrategyIndicator{},
+		&model.StrategySkill{}, &model.StrategyScreenResult{},
 	); mErr != nil {
 		slog.Warn("AutoMigrate 失败", "error", mErr)
 	}

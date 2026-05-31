@@ -890,7 +890,7 @@ type Expr struct {
     Period    int     `json:"period,omitempty"`
     Periods   []int   `json:"periods,omitempty"`    // ma_align
     Direction string  `json:"direction,omitempty"`  // bull|bear
-    Field     string  `json:"field,omitempty"`      // field: close/open/high/low/prev_close/volume/turnover_rate/change_percent
+    Field     string  `json:"field,omitempty"`      // field: close/open/high/low/prev_close/volume/amount/change_percent
     Threshold float64 `json:"threshold,omitempty"`  // amplitude_streak
     Days      int     `json:"days,omitempty"`       // amplitude_streak
     Eps       float64 `json:"eps,omitempty"`        // ma_align 容差, 默认 0

@@ -7,6 +7,7 @@
 package errcode
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
@@ -21,6 +22,15 @@ type AppError struct {
 
 func (e *AppError) Error() string {
 	return fmt.Sprintf("errcode: code=%d message=%s", e.Code, e.Message)
+}
+
+// Is 让 errors.Is 按业务码匹配，使 WithMessage / Wrap 产生的副本仍可被识别。
+func (e *AppError) Is(target error) bool {
+	var t *AppError
+	if errors.As(target, &t) {
+		return e.Code == t.Code
+	}
+	return false
 }
 
 // WithMessage 返回一个保留错误码、替换提示信息的副本，避免污染包级单例。
@@ -55,6 +65,16 @@ var (
 	ErrMarketProvider  = New(20001, "行情数据源异常", http.StatusBadGateway)
 	ErrWatchlistExists = New(20002, "该股票已在自选列表中", http.StatusConflict)
 	ErrStockNotFound   = New(20003, "未找到该股票", http.StatusNotFound)
+)
+
+// 策略 / 量化粗筛错误码 21xxx。
+var (
+	ErrStrategyNotFound  = New(21001, "策略不存在", http.StatusNotFound)
+	ErrIndicatorInvalid  = New(21002, "指标规则非法（未知因子/缺参数/op 不支持）", http.StatusBadRequest)
+	ErrUniverseInvalid   = New(21003, "股票池为空或不支持", http.StatusBadRequest)
+	ErrScreenNotFound    = New(21004, "粗筛任务不存在", http.StatusNotFound)
+	ErrScreenFailed      = New(21005, "粗筛执行失败", http.StatusInternalServerError)
+	ErrInsufficientKline = New(21006, "K 线数据不足以计算指标", http.StatusBadRequest)
 )
 
 // 鉴权错误码 40xxx。
