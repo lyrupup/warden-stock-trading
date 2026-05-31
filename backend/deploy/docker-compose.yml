@@ -1,0 +1,80 @@
+# 守望者后端基础设施编排（见 BACKEND.md §7.1）
+# 用法：docker compose -f deploy/docker-compose.yml up -d
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: warden-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: warden
+      TZ: Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - warden_pg_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d warden"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: warden-redis
+    command: ["redis-server", "--requirepass", "redis123"]
+    ports:
+      - "6379:6379"
+    volumes:
+      - warden_redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "redis123", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  # 可选：RabbitMQ（M2 回测 / M4 分析等耗时任务异步化）
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: warden-rabbitmq
+    profiles: ["full"]
+    environment:
+      RABBITMQ_DEFAULT_USER: warden
+      RABBITMQ_DEFAULT_PASS: warden123
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  backend:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: warden-backend
+    profiles: ["full"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      APP_PORT: 8080
+      SINGLE_USER_MODE: "true"
+      JWT_SECRET: change_me
+      CONFIG_ENC_KEY: "32_bytes_key_for_aes_gcm________"
+      PG_HOST: postgres
+      PG_PORT: 5432
+      PG_USER: postgres
+      PG_PASSWORD: postgres
+      PG_DB: warden
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: redis123
+      MARKET_PROVIDER: gotdx
+      MARKET_GOTDX_MAX_CONN: 8
+    ports:
+      - "8080:8080"
+
+volumes:
+  warden_pg_data:
+  warden_redis_data:

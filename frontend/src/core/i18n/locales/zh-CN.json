@@ -1,0 +1,67 @@
+{
+  "app": {
+    "name": "守望者",
+    "fullName": "守望者股票交易系统",
+    "disclaimer": "本系统提供的 AI 分析、风险提示、盘前预案等均为辅助决策信息，不构成投资建议。"
+  },
+  "nav": {
+    "section": {
+      "scan": "侦查",
+      "insight": "洞察",
+      "alert": "警戒",
+      "message": "传信",
+      "system": "设置"
+    },
+    "dashboard": "工作台",
+    "market": "行情中心",
+    "strategies": "选股策略",
+    "positions": "持仓记录",
+    "risk": "持仓风控",
+    "premarket": "盘前预案",
+    "tasks": "定时任务",
+    "ai": "AI 分析",
+    "reports": "报告库",
+    "settings": "个人中心"
+  },
+  "common": {
+    "loading": "加载中...",
+    "empty": "暂无数据",
+    "error": "加载失败",
+    "retry": "重试",
+    "search": "搜索",
+    "add": "添加",
+    "delete": "删除",
+    "confirm": "确认",
+    "cancel": "取消",
+    "save": "保存"
+  },
+  "theme": {
+    "toggle": "切换主题",
+    "light": "白天",
+    "dark": "暗夜"
+  },
+  "market": {
+    "title": "行情中心",
+    "subtitle": "大盘指数与自选股实时行情",
+    "indices": "大盘指数",
+    "watchlist": "自选股",
+    "tradingNow": "交易中",
+    "closed": "休市",
+    "columns": {
+      "code": "代码",
+      "name": "名称",
+      "price": "现价",
+      "changePercent": "涨跌幅",
+      "change": "涨跌额",
+      "open": "开盘",
+      "high": "最高",
+      "low": "最低",
+      "volume": "成交量",
+      "amount": "成交额",
+      "turnoverRate": "换手率"
+    },
+    "staleTip": "行情数据源异常，当前展示为上次快照",
+    "addWatch": "添加自选",
+    "stockCode": "股票代码"
+  }
+}

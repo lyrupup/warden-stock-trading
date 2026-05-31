@@ -32,3 +32,4 @@ bin/
 tmp/
 .cache/
 coverage/
+.gocache/

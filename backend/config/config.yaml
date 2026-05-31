@@ -1,0 +1,38 @@
+# 守望者后端配置（viper 读取，环境变量优先级更高，见 BACKEND.md §7.2）
+app:
+  port: 8080
+  single_user_mode: true
+  env: dev
+
+jwt:
+  secret: change_me
+
+postgres:
+  host: localhost
+  port: 5432
+  user: postgres
+  password: postgres
+  db: warden
+  sslmode: disable
+  max_open_conns: 20
+  max_idle_conns: 10
+
+redis:
+  host: localhost
+  port: 6379
+  password: redis123
+  db: 0
+
+market:
+  provider: gotdx        # gotdx(主力,直连通达信)|tushare；默认构建下回退 stub
+  gotdx_max_conn: 8
+
+ratelimit:
+  rps: 100
+  burst: 200
+
+timeout:
+  seconds: 10
+
+# 敏感配置 AES-GCM 主密钥，建议仅用环境变量 CONFIG_ENC_KEY 注入
+config_enc_key: ""

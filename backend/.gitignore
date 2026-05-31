@@ -1,0 +1,13 @@
+# 二进制与本地工具
+/warden
+/bin/
+/.tools/
+*.test
+*.out
+
+# 环境与本地配置
+.env
+
+# IDE
+.idea/
+.vscode/
