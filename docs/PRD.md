@@ -210,7 +210,7 @@
 | `amplitude` | 当日 K 线**振幅** | `AMP_t = (high_t − low_t) / prev_close_t × 100%`（表征当日多空分歧剧烈程度） | 数值（%） | `amplitude > 7%` 表示当日分歧剧烈 |
 | `amplitude_streak` | **连续振幅** | 从当前 bar 向前回看，连续满足 `AMP ≥ threshold` 的天数 `≥ days` 则真 | 布尔 | 「振幅大于某值连续多日」=震荡剧烈的中期票 |
 | `pct_change` | N 日**涨跌幅** | `(close_t − close_{t−N}) / close_{t−N} × 100%` | 数值（%） | 区间动量过滤 |
-| `field` | 原始行情字段 | 直接取当前 bar 的 `close/open/high/low/prev_close/volume/turnover_rate/change_percent` | 数值 | 价/量/换手等阈值过滤 |
+| `field` | 原始行情字段 | 直接取当前 bar 的 `close/open/high/low/prev_close/volume/amount/change_percent` | 数值 | 价/量等阈值过滤 |
 | `vol_ratio` | 量比 | `volume_t / 最近 N 日均量`（可选，依数据源） | 数值 | 放量过滤 |
 | `const` | 常量 | 用户给定常量值 | 数值/布尔 | 作为比较右操作数 |
 

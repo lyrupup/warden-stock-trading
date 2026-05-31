@@ -1068,8 +1068,8 @@ components:
         direction: { type: string, enum: [bull, bear], description: "ma_align 排列方向（多头/空头）" }
         field:
           type: string
-          enum: [close, open, high, low, prev_close, volume, turnover_rate, change_percent]
-          description: "type=field 时取的原始 K 线字段"
+          enum: [close, open, high, low, prev_close, volume, amount, change_percent]
+          description: "type=field 时取的原始 K 线字段（turnover_rate 需快照数据，暂不支持）"
         threshold: { type: number, description: "amplitude_streak 振幅阈值(%)" }
         days: { type: integer, description: "amplitude_streak 连续天数" }
         eps: { type: number, description: "ma_align 容差，默认 0" }

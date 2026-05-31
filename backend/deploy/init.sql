@@ -106,6 +106,43 @@ CREATE TABLE IF NOT EXISTS backtest_results (
 );
 CREATE INDEX IF NOT EXISTS idx_backtest_results_strategy_id ON backtest_results(strategy_id);
 
+-- M2 量化粗筛任务/结果
+CREATE TABLE IF NOT EXISTS strategy_screen_results (
+    id BIGSERIAL PRIMARY KEY,
+    user_id BIGINT NOT NULL,
+    strategy_id BIGINT NOT NULL,
+    status SMALLINT NOT NULL DEFAULT 0,      -- 0 pending 1 running 2 done 3 failed
+    params JSONB NOT NULL DEFAULT '{}',
+    universe_count INT NOT NULL DEFAULT 0,
+    matched_count INT NOT NULL DEFAULT 0,
+    candidates JSONB,
+    trade_date DATE,
+    error_msg VARCHAR(512) NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+CREATE INDEX IF NOT EXISTS idx_screen_results_strategy_id ON strategy_screen_results(strategy_id);
+CREATE INDEX IF NOT EXISTS idx_screen_results_user_id ON strategy_screen_results(user_id);
+
+-- M2 个股技术指标快照（公共, 可选；由 M5 盘后定时任务预计算，全市场粗筛加速）
+CREATE TABLE IF NOT EXISTS stock_indicator_snapshots (
+    id BIGSERIAL PRIMARY KEY,
+    stock_code VARCHAR(16) NOT NULL,
+    stock_name VARCHAR(64) NOT NULL DEFAULT '',
+    trade_date DATE NOT NULL,
+    close NUMERIC(20,4), prev_close NUMERIC(20,4),
+    ma5 NUMERIC(20,4), ma10 NUMERIC(20,4), ma20 NUMERIC(20,4),
+    ma30 NUMERIC(20,4), ma60 NUMERIC(20,4),
+    bias5 NUMERIC(10,4), bias10 NUMERIC(10,4), bias20 NUMERIC(10,4),
+    amplitude NUMERIC(10,4),
+    amplitude_streak SMALLINT NOT NULL DEFAULT 0,
+    turnover_rate NUMERIC(10,4), volume NUMERIC(20,0), change_percent NUMERIC(10,4),
+    factors JSONB,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE (stock_code, trade_date)
+);
+CREATE INDEX IF NOT EXISTS idx_indicator_snap_date ON stock_indicator_snapshots(trade_date);
+
 -- M3 持仓
 CREATE TABLE IF NOT EXISTS positions (
     id BIGSERIAL PRIMARY KEY,
