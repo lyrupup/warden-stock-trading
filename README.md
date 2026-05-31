@@ -52,10 +52,8 @@
 ## 📚 文档
 
 - 产品需求文档（PRD）：[`docs/PRD.md`](docs/PRD.md)
-- 前端技术开发文档：_待输出_
-- 后端技术开发文档：_待输出_
-- 数据库设计文档：_待输出_
-- 接口（API）设计文档：_待输出_
+- 前端技术开发文档：[`docs/FRONTEND.md`](docs/FRONTEND.md)
+- 后端技术开发文档（含数据库设计 / API 接口 / TDD 测试）：[`docs/BACKEND.md`](docs/BACKEND.md)
 
 ---
 
