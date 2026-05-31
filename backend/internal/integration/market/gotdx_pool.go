@@ -2,9 +2,9 @@
 
 // 本文件仅在 `-tags gotdx` 构建时编译。
 //
-// 说明：bensema/gotdx 当前 release 要求 Go >= 1.26，而本仓库 module 锚定 Go 1.22，
-// 因此默认构建不包含本文件，行情源回退到 stubProvider（见 stub_provider.go）。
-// 接入真实 gotdx 步骤见 README「待办」。
+// gotdx 的 *gotdx.Client 单连接非并发安全（一个 TCP 连接同一时刻只能跑一次
+// 请求-响应）。这里用最简连接池：借出一个连接独占使用，用完归还；连接异常时
+// 丢弃并下次重建（见 BACKEND.md §5 gotdx 连接池封装）。
 package market
 
 import (
@@ -13,54 +13,60 @@ import (
 	"github.com/bensema/gotdx"
 )
 
-// gotdxPool 解决 TDX 单连接非并发安全：每次请求借一个连接，用完归还；
-// 连接异常时丢弃并下次重建（见 BACKEND.md §5 gotdx 连接池封装）。
 type gotdxPool struct {
-	mu    sync.Mutex
-	idle  []*gotdx.Client
-	max   int
-	n     int
-	newFn func() (*gotdx.Client, error)
+	mu   sync.Mutex
+	idle []*gotdx.Client
+	max  int // 池中最多缓存的空闲连接数
 }
 
 func newGotdxPool(max int) *gotdxPool {
-	return &gotdxPool{
-		max: max,
-		newFn: func() (*gotdx.Client, error) {
-			hosts := gotdx.MainHostAddresses()
-			cli := gotdx.New(
-				gotdx.WithTCPAddress(hosts[0]),
-				gotdx.WithTCPAddressPool(hosts[1:]...),
-				gotdx.WithAutoSelectFastest(true), // 自动选最快节点
-				gotdx.WithTimeoutSec(6),
-			)
-			return cli, cli.Connect()
-		},
+	if max <= 0 {
+		max = 4
 	}
+	return &gotdxPool{max: max}
 }
 
+// newClient 建立并握手一个通达信主行情连接。
+// 默认 Options 已内置主站地址池（gotdx.MainHostAddresses），开启测速优选最快节点。
+func (p *gotdxPool) newClient() (*gotdx.Client, error) {
+	cli := gotdx.New(
+		gotdx.WithAutoSelectFastest(true), // 连接前对地址池做 TCP 测速，优先低延迟节点
+		gotdx.WithTimeoutSec(6),
+	)
+	if _, err := cli.Connect(); err != nil { // Connect 返回 (*Hello1Reply, error)
+		return nil, err
+	}
+	return cli, nil
+}
+
+// Get 借出一个可用连接：优先复用空闲连接，否则新建。
 func (p *gotdxPool) Get() (*gotdx.Client, error) {
 	p.mu.Lock()
-	if len(p.idle) > 0 {
-		cli := p.idle[len(p.idle)-1]
-		p.idle = p.idle[:len(p.idle)-1]
+	if n := len(p.idle); n > 0 {
+		cli := p.idle[n-1]
+		p.idle = p.idle[:n-1]
 		p.mu.Unlock()
 		return cli, nil
 	}
-	p.n++
 	p.mu.Unlock()
-	return p.newFn() // 新建连接（含 host 测速）
+	return p.newClient()
 }
 
+// Put 归还连接。broken=true 表示本次请求出错、连接可能已损坏，直接断开丢弃。
 func (p *gotdxPool) Put(cli *gotdx.Client, broken bool) {
-	if broken { // 连接异常则丢弃并重置计数，下次重建
+	if cli == nil {
+		return
+	}
+	if broken {
 		_ = cli.Disconnect()
-		p.mu.Lock()
-		p.n--
-		p.mu.Unlock()
 		return
 	}
 	p.mu.Lock()
+	if len(p.idle) >= p.max {
+		p.mu.Unlock()
+		_ = cli.Disconnect()
+		return
+	}
 	p.idle = append(p.idle, cli)
 	p.mu.Unlock()
 }

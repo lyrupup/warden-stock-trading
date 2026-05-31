@@ -1,6 +1,6 @@
 # 守望者股票交易系统 · 后端（warden-backend）
 
-Go 1.22 + Gin + GORM + PostgreSQL + Redis 的后端服务。本仓库为 monorepo 子目录 `backend/`，
+Go 1.26 + Gin + GORM + PostgreSQL + Redis 的后端服务。本仓库为 monorepo 子目录 `backend/`，
 严格遵循 [`docs/BACKEND.md`](../docs/BACKEND.md) 的分层规范、统一响应、错误码与 context 传播，
 并以 **M1 行情** 作为打通各层的竖切范式。
 
@@ -16,7 +16,7 @@ backend/
 │   ├── model/                 # GORM 模型（User/WatchlistItem/IndexQuote/StockQuote/Position/Trade）
 │   ├── dto/{request,response} # 入参/出参 DTO
 │   ├── middleware/            # recovery/logger/cors/ratelimit/timeout/auth
-│   ├── integration/market/    # 行情源：IMarketProvider + stub + gotdx(脚手架,build tag)
+│   ├── integration/market/    # 行情源：IMarketProvider + stub(默认) + gotdx 真实实现(build tag)
 │   ├── mock/                  # mockgen 生成的 mock
 │   └── router/router.go       # 中间件装配(§7.3) + /api 路由
 ├── pkg/{errcode,response,database,cache}
@@ -27,9 +27,9 @@ backend/
 
 ## 环境要求
 
-- **Go 工具链**：模块声明 `go 1.22`（最低版本）。在 **macOS 26 / darwin 25** 上请使用
-  **Go ≥ 1.24** 的工具链，否则 1.22 的内部链接器产物缺少 `LC_UUID`，新版 dyld 会
-  在运行测试/二进制时报 `missing LC_UUID load command` 而 abort。Go 1.24+ 已修复。
+- **Go 工具链**：模块声明 `go 1.26.0`（`github.com/bensema/gotdx` 要求 Go ≥ 1.26）。
+  本机若为 Go 1.24/1.25，设 `GOTOOLCHAIN=auto`（默认值）即可在首次构建时自动拉取
+  并切换到 go1.26 工具链，无需手动安装。
 - Docker（用于本地 PostgreSQL/Redis）。
 
 ## 快速开始
@@ -47,14 +47,19 @@ cp .env.example .env # 或直接用 config/config.yaml 默认值
 make build           # go build ./...
 make test            # go test ./... -cover
 
-# 4) 启动服务
-make run             # go run ./cmd/server  → http://localhost:8080
+# 4) 启动服务（二选一）
+make run             # go run ./cmd/server            → stub 示例行情（无需外网）
+make run-gotdx       # go run -tags gotdx ./cmd/server → 真实通达信实时行情
 curl http://localhost:8080/health
 curl http://localhost:8080/api/market/indices   # 单用户模式无需 token
 ```
 
-> 无 PostgreSQL/Redis 时服务仍可启动（降级日志，依赖 DB 的接口会返回错误），
-> 行情类接口因默认 stub 数据源可直接返回示例数据。
+> 无 PostgreSQL/Redis 时服务仍可启动（降级日志，依赖 DB 的接口会返回错误）。
+>
+> **行情数据源**：默认构建（`make run` / `make build`）行情源回退 `stubProvider`，
+> 返回确定性示例数据，便于离线开发与单测。要拿**真实通达信行情**，用
+> `make run-gotdx`（即 `-tags gotdx`，编译进 `//go:build gotdx` 文件直连通达信主站），
+> 并确保 `market.provider=gotdx`（默认）或 `MARKET_PROVIDER=gotdx`。
 
 ## M1 行情接口（对齐 [`docs/openapi.yaml`](../docs/openapi.yaml)）
 
@@ -91,16 +96,18 @@ make mock   # 接口变更后重新生成
 
 ## 待办（TODO）
 
-- [ ] **接入真实 gotdx 行情源**：当前 `github.com/bensema/gotdx` 最新版要求 `go >= 1.26`，
-      与本模块锚定的 `go 1.22` 不兼容，故默认行情源为 `stubProvider`（返回示例数据）。
-      真实实现脚手架已按 BACKEND.md §5 落地于 `internal/integration/market/gotdx_pool.go`、
-      `gotdx_provider.go`、`gotdx_mapper.go`，均带 **构建标签 `//go:build gotdx`**（默认构建排除）。
-      接入步骤：
-      1. 将 `go.mod` 的 Go 版本提升至 gotdx 要求的版本并 `go get github.com/bensema/gotdx`；
-      2. 按真实 gotdx API 调整 `gotdx_mapper.go` 中的字段映射与 `applyAdjust` 复权计算
-         （以「能编译」为准，用适配函数封装差异，保持 `IMarketProvider` 接口不变）；
-      3. `MARKET_PROVIDER=gotdx` 并以 `go build -tags gotdx ./...` 构建。
-      Service/Handler 无需改动（仅依赖 `IMarketProvider` 接口）。
+- [x] **接入真实 gotdx 行情源**：`go.mod` 已锚定 `go 1.26.0` 并 `go get github.com/bensema/gotdx`。
+      真实实现位于 `internal/integration/market/`（均带 **构建标签 `//go:build gotdx`**）：
+      - `gotdx_pool.go`：通达信连接池（单连接非并发安全，借出独占/用完归还/坏连接丢弃），
+        内置主站地址池 + 连接前测速优选最快节点；
+      - `gotdx_provider.go`：`Indices`(`StockIndexInfo`)、`Quotes`(`StockQuotesDetail`)、
+        `Kline`(`StockKLine`，**服务端复权** qfq/hfq)、`Search`（懒加载全市场证券名索引本地过滤，
+        启动时后台预热）；所有外呼包 panic 兜底，畸形/空响应转 error 优雅降级；
+      - `gotdx_mapper.go`：`proto.*` → warden model 字段映射、市场代码/K线周期/复权枚举转换。
+      用 `make run-gotdx`（或 `go build -tags gotdx ./...` + `MARKET_PROVIDER=gotdx`）启用；
+      Service/Handler 无改动（仅依赖 `IMarketProvider` 接口）。
+      > 注：单次 K 线条数上限 480（通达信单包上限不足 800）；换手率 = gotdx `Turnover`÷10000
+      > （其量纲为「真实换手率% × 10000」，流通股单位为万股，故还原为百分比）。
 - [ ] M2~M7 各模块 handler/service/repository（按本竖切范式扩展）。
 - [ ] `pkg/crypto` AES-GCM、`pkg/mq` RabbitMQ、`scheduler` cron 调度器。
 - [ ] 集成测试（`test/`，dockertest 起测试库跑真实 SQL）。
