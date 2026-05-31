@@ -427,6 +427,8 @@ func (Position) TableName() string { return "positions" }
 
 ## 4. API 接口文档
 
+> 📄 机器可读的接口契约见 [`docs/openapi.yaml`](./openapi.yaml)（OpenAPI 3.0）。前端可用其生成类型/Mock，后端可用 swaggo 同步维护。本节为人读摘要，二者保持一致。
+
 ### 4.1 通用约定
 
 - BasePath：`/api`
@@ -594,9 +596,77 @@ event: error\ndata: {"code":25001,"message":"llm error"}\n\n
 type IMarketProvider interface {
     Indices(ctx context.Context) ([]model.IndexQuote, error)
     Quotes(ctx context.Context, codes []string) ([]model.StockQuote, error)
-    Kline(ctx context.Context, code, period string) ([]model.Kline, error)
+    Kline(ctx context.Context, code, period, adjust string) ([]model.Kline, error)
+    Search(ctx context.Context, kw string) ([]model.StockBrief, error)
 }
 ```
+
+#### 行情数据源 / SDK 选型
+
+> A 股**没有官方 Go SDK**，主流是封装新浪 / 腾讯 / 东方财富 / 通达信的公开接口，或对接 Tushare / BaoStock。本系统通过 `IMarketProvider` 接口屏蔽底层差异，可按需切换或组合多源。
+
+| 库 | 数据源 | 用途定位 | 说明 |
+|----|--------|---------|------|
+| **efinance-go** `github.com/T1anjiu/efinance-go` | 腾讯 + 东方财富 | **实时行情 / K 线 / 基本面 / 资金流（主力源）** | 纯 Go，内置缓存 + 自动重试 + 并发限流，连接池复用，依赖少 |
+| **adata-go** / `Hanson/adata-golang` | 东财/新浪/腾讯/百度 | 行情 + 财务 + 北向资金 / 龙虎榜等舆情 | 接口全，含市场情绪数据，适合 M1 概览 / M4 风控 |
+| **akshare(Go)** `github.com/BlakeLiAFK/akshare` | 多源 | 历史行情 / 基本面 / 指数（1100+ 接口） | 对标 Python AKShare，覆盖最广，适合回测取数 |
+| **go-tushare-sdk** `github.com/yushikuann/go-tushare-sdk` | Tushare Pro | 权威历史 / 财务 / 基本面 | 需 token + 积分，数据规范，适合正式回测 / 基本面 |
+| **baostock(Go)** `github.com/millken/baostock` | BaoStock | 免费历史日 / 分钟 K 线、财务 | 免费无需 token（需 Login），适合 MVP 回测 |
+| **tongstock** `github.com/sjzsdu/tongstock` | 通达信(7709) | 五档 / 分笔 / Level 深度行情 | 深度行情，可独立起 HTTP 服务 |
+
+**推荐落地组合（V1）**：
+- **实时行情 / K 线 / 搜索** → `efinance-go`（`MarketProviderEfinance` 实现 `IMarketProvider`）。
+- **回测历史数据** → `baostock`（免费）或 `akshare(Go)`；正式环境可升级 `Tushare`。
+- 通过配置 `MARKET_PROVIDER=efinance|tushare|baostock` 选择实现；也支持 M7 用户级覆盖（用户填自己的 Tushare token）。
+
+> ⚠️ 合规提示：免费公开源（新浪/腾讯/东财）有频率限制与稳定性风险，且通常仅限个人非商业使用。需做好限频、重试、缓存兜底；未来商用应评估合规并接入券商 QMT / 持牌数据厂商。
+
+#### Provider 脚手架示例（efinance-go）
+
+```go
+// internal/integration/market/efinance_provider.go
+package market
+
+import (
+    "context"
+
+    ef "github.com/T1anjiu/efinance-go/stock"
+    "warden/internal/model"
+)
+
+type efinanceProvider struct{}
+
+func NewEfinanceProvider() IMarketProvider { return &efinanceProvider{} }
+
+func (p *efinanceProvider) Quotes(ctx context.Context, codes []string) ([]model.StockQuote, error) {
+    out := make([]model.StockQuote, 0, len(codes))
+    for _, code := range codes {
+        select {
+        case <-ctx.Done():
+            return nil, ctx.Err() // 传播取消/超时
+        default:
+        }
+        q, err := ef.GetLatestQuote(code)
+        if err != nil {
+            return nil, err
+        }
+        out = append(out, mapQuote(q))
+    }
+    return out, nil
+}
+
+func (p *efinanceProvider) Kline(ctx context.Context, code, period, adjust string) ([]model.Kline, error) {
+    bars, err := ef.GetQuoteHistory(code, period, adjust) // 日/周/月/分钟 + 前后复权
+    if err != nil {
+        return nil, err
+    }
+    return mapKlines(bars), nil
+}
+
+// Indices / Search 同理封装；mapXxx 负责字段映射到本系统 model
+```
+
+> Service 层只依赖 `IMarketProvider` 接口，测试时用 mockgen 生成 mock，禁止单测中真实外呼（见 §6.2）。切换数据源仅需在依赖注入处替换 `NewEfinanceProvider()` 为其他实现。
 
 ### M2 策略模块设计
 

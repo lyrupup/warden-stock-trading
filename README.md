@@ -53,7 +53,8 @@
 
 - 产品需求文档（PRD）：[`docs/PRD.md`](docs/PRD.md)
 - 前端技术开发文档：[`docs/FRONTEND.md`](docs/FRONTEND.md)
-- 后端技术开发文档（含数据库设计 / API 接口 / TDD 测试）：[`docs/BACKEND.md`](docs/BACKEND.md)
+- 后端技术开发文档（含数据库设计 / API 接口 / TDD 测试 / 行情数据源选型）：[`docs/BACKEND.md`](docs/BACKEND.md)
+- OpenAPI 接口定义（前后端契约）：[`docs/openapi.yaml`](docs/openapi.yaml)
 
 ---
 
