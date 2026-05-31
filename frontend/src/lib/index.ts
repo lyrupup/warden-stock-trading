@@ -1,4 +1,5 @@
 export { cn } from "./cn";
+export { type TNumericInput, toNumber, coerceDecimalFields } from "./decimal";
 export {
   type TQuoteDirection,
   getQuoteDirection,

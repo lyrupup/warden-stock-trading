@@ -437,6 +437,11 @@ func (Position) TableName() string { return "positions" }
 - 响应体：`{ "code": 0, "message": "ok", "data": ... }`。
 - 分页：query `?page=1&size=20`，响应 `data={list,total,page,size}`。
 - 时间：ISO8601。
+- **数值精度（重要约定）**：所有**金额 / 价格 / 数量 / 比率**字段后端统一用 `shopspring/decimal.Decimal`（DB 为 `numeric`）以保证精度，其默认 `MarshalJSON` **序列化为带引号的 JSON 字符串**（如 `"10.5000"`、`"1.94"`）。
+  - 即：行情（price/open/high/low/change_percent/volume/amount/turnover_rate）、持仓与交易（quantity/avg_cost/total_cost/pnl/fee/tax）、回测指标、账户总览等数值字段，**线上类型为 string（decimal）**，对应 openapi 的 `Decimal` schema（`type: string`）。
+  - 入参：DTO 中的 decimal 字段后端可同时解析数字与字符串（`10.5` 或 `"10.5"`）。
+  - 前端约定：必须经统一 decimal 工具（`lib/decimal.ts` 的 `toNumber` / `coerceDecimalFields`）转 number 后再计算或格式化，**禁止直接对其做算术或 `.toFixed()`**。
+  - 取舍说明：保精度优先（金融场景）；如需改为输出 JSON 数字，可全局设 `decimal.MarshalJSONWithoutQuotes = true`，但需评估大数精度，且要同步更新 openapi 与前端。当前默认采用 **decimal 字符串** 方案。
 
 ### 4.2 鉴权 Auth
 

@@ -8,6 +8,9 @@ info:
     - 鉴权：Authorization: Bearer <token>（单用户模式可省略）。
     - 分页：query page/size，响应 data={list,total,page,size}。
     - 流式接口（AI 分析）走 SSE，不在本文件 JSON schema 内描述，详见 BACKEND.md §4.10。
+    - **金额/价格/数量/比率统一为 decimal 字符串**（type: string，见 components.schemas.Decimal）：
+      后端用 shopspring/decimal 保精度，JSON 序列化为带引号字符串（如 "10.5000"）。
+      前端须经统一 decimal 工具转 number 后再计算/格式化，禁止直接对其做算术或 .toFixed()。
   version: 1.0.0
 servers:
   - url: http://localhost:8080/api
@@ -851,6 +854,14 @@ components:
         total: { type: integer }
         page: { type: integer }
         size: { type: integer }
+    Decimal:
+      type: string
+      description: >-
+        高精度十进制数值，**JSON 序列化为字符串**（后端使用 shopspring/decimal，
+        金额/价格/比率均如此），如 "10.5000"、"1.94"。前端需用统一的 decimal 解析工具
+        （`lib/decimal.ts` 的 `toNumber` / `coerceDecimalFields`）转 number 后再计算或格式化。
+        作为请求体入参时，后端同时可解析数字与字符串（如 10.5 或 "10.5"）。
+      example: "10.5000"
     User:
       type: object
       properties:
@@ -861,41 +872,44 @@ components:
         status: { type: integer }
     IndexQuote:
       type: object
+      description: 数值字段为 decimal 字符串（见 Decimal）。
       properties:
         index_code: { type: string, example: "000001" }
         index_name: { type: string, example: "上证指数" }
-        price: { type: number }
-        change_amount: { type: number }
-        change_percent: { type: number }
-        volume: { type: number }
-        amount: { type: number }
+        price: { $ref: "#/components/schemas/Decimal" }
+        change_amount: { $ref: "#/components/schemas/Decimal" }
+        change_percent: { $ref: "#/components/schemas/Decimal" }
+        volume: { $ref: "#/components/schemas/Decimal" }
+        amount: { $ref: "#/components/schemas/Decimal" }
         trade_date: { type: string, format: date }
     StockQuote:
       type: object
+      description: 数值字段为 decimal 字符串（见 Decimal）。
       properties:
         stock_code: { type: string }
         stock_name: { type: string }
-        price: { type: number }
-        open: { type: number }
-        high: { type: number }
-        low: { type: number }
-        prev_close: { type: number }
-        change_percent: { type: number }
-        volume: { type: number }
-        amount: { type: number }
-        turnover_rate: { type: number }
+        price: { $ref: "#/components/schemas/Decimal" }
+        open: { $ref: "#/components/schemas/Decimal" }
+        high: { $ref: "#/components/schemas/Decimal" }
+        low: { $ref: "#/components/schemas/Decimal" }
+        prev_close: { $ref: "#/components/schemas/Decimal" }
+        change_percent: { $ref: "#/components/schemas/Decimal" }
+        volume: { $ref: "#/components/schemas/Decimal" }
+        amount: { $ref: "#/components/schemas/Decimal" }
+        turnover_rate: { $ref: "#/components/schemas/Decimal" }
         trade_date: { type: string, format: date }
         stale: { type: boolean, description: 是否为降级返回的过期快照 }
     Kline:
       type: object
+      description: 数值字段为 decimal 字符串（见 Decimal）。
       properties:
         date: { type: string }
-        open: { type: number }
-        high: { type: number }
-        low: { type: number }
-        close: { type: number }
-        volume: { type: number }
-        amount: { type: number }
+        open: { $ref: "#/components/schemas/Decimal" }
+        high: { $ref: "#/components/schemas/Decimal" }
+        low: { $ref: "#/components/schemas/Decimal" }
+        close: { $ref: "#/components/schemas/Decimal" }
+        volume: { $ref: "#/components/schemas/Decimal" }
+        amount: { $ref: "#/components/schemas/Decimal" }
     WatchItem:
       type: object
       properties:
@@ -943,53 +957,62 @@ components:
         status: { type: integer, description: "0 pending,1 running,2 done,3 failed" }
         metrics:
           type: object
+          description: 指标值为 decimal 字符串（见 Decimal）。
           properties:
-            total_return: { type: number }
-            max_drawdown: { type: number }
-            win_rate: { type: number }
-            sharpe: { type: number }
+            total_return: { $ref: "#/components/schemas/Decimal" }
+            max_drawdown: { $ref: "#/components/schemas/Decimal" }
+            win_rate: { $ref: "#/components/schemas/Decimal" }
+            sharpe: { $ref: "#/components/schemas/Decimal" }
         curve:
           type: array
           items:
             type: object
             properties:
               date: { type: string }
-              nav: { type: number }
+              nav: { $ref: "#/components/schemas/Decimal" }
         error_msg: { type: string }
     Position:
       type: object
+      description: 金额/数量字段为 decimal 字符串（见 Decimal）。
       properties:
         id: { type: integer }
         stock_code: { type: string }
         stock_name: { type: string }
-        quantity: { type: number }
-        avg_cost: { type: number }
-        total_cost: { type: number }
-        current_price: { type: number }
-        market_value: { type: number }
-        float_pnl: { type: number, description: 浮动盈亏 }
-        float_pnl_ratio: { type: number }
-        realized_pnl: { type: number, description: 已实现盈亏 }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        avg_cost: { $ref: "#/components/schemas/Decimal" }
+        total_cost: { $ref: "#/components/schemas/Decimal" }
+        current_price: { $ref: "#/components/schemas/Decimal" }
+        market_value: { $ref: "#/components/schemas/Decimal" }
+        float_pnl:
+          allOf:
+            - $ref: "#/components/schemas/Decimal"
+            - description: 浮动盈亏（decimal 字符串）
+        float_pnl_ratio: { $ref: "#/components/schemas/Decimal" }
+        realized_pnl:
+          allOf:
+            - $ref: "#/components/schemas/Decimal"
+            - description: 已实现盈亏（decimal 字符串）
         status: { type: integer, description: "1 持有,2 已清仓" }
     AddTradeReq:
       type: object
       required: [side, price, quantity, traded_at]
       properties:
         side: { type: integer, enum: [1, 2], description: "1 买入,2 卖出" }
-        price: { type: number }
-        quantity: { type: number }
-        fee: { type: number, default: 0 }
-        tax: { type: number, default: 0 }
+        price: { $ref: "#/components/schemas/Decimal" }
+        quantity: { $ref: "#/components/schemas/Decimal" }
+        fee: { $ref: "#/components/schemas/Decimal" }
+        tax: { $ref: "#/components/schemas/Decimal" }
         traded_at: { type: string, format: date-time }
         remark: { type: string }
     AccountSummary:
       type: object
+      description: 金额/比率字段为 decimal 字符串（见 Decimal）。
       properties:
-        total_market_value: { type: number }
-        total_cost: { type: number }
-        total_float_pnl: { type: number }
-        total_return_ratio: { type: number }
-        today_pnl: { type: number }
+        total_market_value: { $ref: "#/components/schemas/Decimal" }
+        total_cost: { $ref: "#/components/schemas/Decimal" }
+        total_float_pnl: { $ref: "#/components/schemas/Decimal" }
+        total_return_ratio: { $ref: "#/components/schemas/Decimal" }
+        today_pnl: { $ref: "#/components/schemas/Decimal" }
     PositionAnalysisReport:
       type: object
       properties:
