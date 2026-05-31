@@ -14,6 +14,7 @@
     },
     "dashboard": "工作台",
     "market": "行情中心",
+    "stockQuote": "个股行情",
     "strategies": "选股策略",
     "positions": "持仓记录",
     "risk": "持仓风控",
@@ -47,6 +48,23 @@
     "watchlist": "自选股",
     "tradingNow": "交易中",
     "closed": "休市",
+    "stockQuote": {
+      "title": "个股行情",
+      "subtitle": "搜索个股，查看当日行情与历史 K 线"
+    },
+    "phase": {
+      "nonTradingDay": "非交易日",
+      "preOpen": "未开盘",
+      "trading": "交易中",
+      "lunchBreak": "午间休市",
+      "closed": "已收盘"
+    },
+    "search": {
+      "placeholder": "输入股票代码或名称搜索",
+      "hint": "搜索股票代码或名称，查看当日行情与历史 K 线",
+      "noResult": "未找到匹配的股票",
+      "reset": "重新搜索"
+    },
     "columns": {
       "code": "代码",
       "name": "名称",

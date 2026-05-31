@@ -3,10 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { PageHeader } from "@/components/common/page-header";
 import { EmptyState } from "@/components/common/empty-state";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { isTradingTime } from "@/lib/trading-time";
+import { MarketStatus } from "../components/market-status";
 import { IndexCard } from "../components/index-card";
 import { WatchlistTable } from "../components/watchlist-table";
 import { useIndices } from "../hooks/use-indices";
@@ -25,7 +24,6 @@ export function MarketPage() {
   const addWatch = useAddWatch();
   const removeWatch = useRemoveWatch();
 
-  const inTrading = isTradingTime();
   const quotes = quotesQuery.data ?? [];
   const hasStale = quotes.some((q) => q.stale);
 
@@ -43,15 +41,7 @@ export function MarketPage() {
 
   return (
     <div>
-      <PageHeader
-        title={t("market.title")}
-        description={t("market.subtitle")}
-        actions={
-          <Badge variant={inTrading ? "success" : "secondary"}>
-            {inTrading ? t("market.tradingNow") : t("market.closed")}
-          </Badge>
-        }
-      />
+      <PageHeader title={t("market.title")} description={t("market.subtitle")} actions={<MarketStatus />} />
 
       {hasStale ? (
         <div className="mb-4 rounded-md border border-quote-flat/30 bg-muted px-4 py-2 text-sm text-muted-foreground">

@@ -251,8 +251,9 @@ export const useAuthStore = create<TAuthState>((set) => ({
 |------|------|------|------|
 | `/login` | 登录页 | auth | 公开 |
 | `/` → `/dashboard` | 工作台/首页 | 聚合 | 需登录 |
-| `/market` | 行情中心 | M1 | 需登录 |
-| `/market/:code` | 个股详情 | M1 | 需登录 |
+| `/market` | 行情中心（大盘指数 + 自选股） | M1 | 需登录 |
+| `/market/quote` | 个股行情（搜索个股看当日行情 + K 线，左侧「侦查」独立入口） | M1 | 需登录 |
+| `/market/:code` | 个股详情（与个股行情页复用同一面板） | M1 | 需登录 |
 | `/strategies` | 策略列表 | M2 | 需登录 |
 | `/strategies/:id` | 策略详情/编辑（含 skill.md、回测） | M2 | 需登录 |
 | `/positions` | 持仓列表 | M3 | 需登录 |
@@ -277,13 +278,16 @@ export const useAuthStore = create<TAuthState>((set) => ({
 
 ### M1 行情中心（features/market）
 
-**页面**：行情中心 `/market`、个股详情 `/market/:code`
+**页面**：行情中心 `/market`、**个股行情 `/market/quote`**（左侧「侦查」分区独立入口）、个股详情 `/market/:code`
 
 **核心功能**
-- 大盘指数卡片区：进入自动加载当日指数（上证/深证/创业板/科创50/沪深300），涨跌色展示。
-- 市场概览：涨跌家数、涨停跌停、北向资金（按数据源裁剪）。
-- 自选股表格：`data-table` 展示自选股实时行情，支持分组、搜索、增删、跳转详情。
-- 个股详情：`lightweight-charts` 渲染 K 线（日/周/月切换）+ 分时，基础财务概要。
+- 行情中心 `/market`：
+  - 大盘指数卡片区：进入自动加载当日指数（上证/深证/创业板/科创50/沪深300），涨跌色展示。
+  - 市场概览：涨跌家数、涨停跌停、北向资金（按数据源裁剪）。
+  - 自选股表格：`data-table` 展示自选股实时行情，支持分组、搜索、增删、跳转详情。
+- 个股行情 `/market/quote`（`pages/stock-quote-page.tsx`）：输入股票代码 / 名称搜索（`GET /market/search`）→ 选中结果后展示该股**当日行情 + 历史 K 线**；唯一匹配（如精确代码）自动选中。
+- 个股详情 / 个股行情面板：`lightweight-charts` 渲染 K 线（日/周/月切换）+ 分时，基础财务概要。
+  - 当日行情卡片与 K 线抽为 **`components/stock-quote-panel.tsx`**，由 `/market/:code` 详情页与 `/market/quote` 个股行情页 **共用同一组件**（按 `code` 自取数，react-query 缓存）。
 
 **实现要点**
 - 行情刷新：交易时段内用 TanStack Query 的 `refetchInterval`（频率读 M7 配置，默认 5s）；非交易时段停止轮询。可选升级为 `core/ws` 的 SSE 推送。

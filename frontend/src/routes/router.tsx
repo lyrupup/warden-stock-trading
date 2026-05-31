@@ -1,7 +1,7 @@
 import { createBrowserRouter, Navigate } from "react-router-dom";
 import { LoginPage } from "@/features/auth";
 import { DashboardPage } from "@/features/dashboard";
-import { MarketPage, StockDetailPage } from "@/features/market";
+import { MarketPage, StockDetailPage, StockQuotePage } from "@/features/market";
 import { StrategyDetailPage, StrategyListPage } from "@/features/strategy";
 import { PositionDetailPage, PositionListPage } from "@/features/position";
 import { PremarketPage, RiskPage } from "@/features/risk";
@@ -24,6 +24,7 @@ export const router = createBrowserRouter([
       { index: true, element: <Navigate to="/dashboard" replace /> },
       { path: "dashboard", element: <DashboardPage /> },
       { path: "market", element: <MarketPage /> },
+      { path: "market/quote", element: <StockQuotePage /> },
       { path: "market/:code", element: <StockDetailPage /> },
       { path: "strategies", element: <StrategyListPage /> },
       { path: "strategies/:id", element: <StrategyDetailPage /> },

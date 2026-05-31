@@ -27,3 +27,25 @@ export function isTradingTime(date: Date = new Date()): boolean {
   const inAfternoon = minutes >= AFTERNOON_START && minutes <= AFTERNOON_END;
   return inMorning || inAfternoon;
 }
+
+/**
+ * 交易阶段，用于页面直观展示当前盘口状态：
+ * - nonTradingDay 非交易日（周末，节假日由后端裁剪）
+ * - preOpen 未开盘（交易日 09:30 前）
+ * - trading 交易中（09:30-11:30 / 13:00-15:00）
+ * - lunchBreak 午间休市（11:30-13:00）
+ * - closed 已收盘（交易日 15:00 后）
+ */
+export type TTradingPhase = "nonTradingDay" | "preOpen" | "trading" | "lunchBreak" | "closed";
+
+/** 判断当前（或指定时间）所处的交易阶段 */
+export function getTradingPhase(date: Date = new Date()): TTradingPhase {
+  if (!isTradingDay(date)) return "nonTradingDay";
+  const d = dayjs(date);
+  const minutes = d.hour() * 60 + d.minute();
+  if (minutes < MORNING_START) return "preOpen";
+  if (minutes <= MORNING_END) return "trading";
+  if (minutes < AFTERNOON_START) return "lunchBreak";
+  if (minutes <= AFTERNOON_END) return "trading";
+  return "closed";
+}

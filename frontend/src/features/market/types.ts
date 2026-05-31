@@ -37,6 +37,13 @@ export type TWatchItem = {
   remark?: string;
 };
 
+/** 股票搜索结果（对应 openapi StockBrief） */
+export type TStockBrief = {
+  stock_code: string;
+  stock_name: string;
+  market?: string;
+};
+
 /** 添加自选股参数 */
 export type TAddWatchParams = {
   stock_code: string;

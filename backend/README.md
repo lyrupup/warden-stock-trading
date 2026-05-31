@@ -72,7 +72,10 @@ curl http://localhost:8080/api/market/indices   # 单用户模式无需 token
 | GET | `/api/market/watchlist/quotes` | 自选股实时行情（缓存→provider→快照兜底，降级 `stale=true`） |
 | GET | `/api/market/stocks/:code` | 个股行情详情 |
 | GET | `/api/market/stocks/:code/kline?period=day&adjust=qfq` | K 线 |
-| GET | `/api/market/search?kw=` | 股票搜索 |
+| GET | `/api/market/search?kw=` | 股票搜索（按代码/名称） |
+
+> 前端「侦查 · 个股行情」页（`/market/quote`）由 `search` + `stocks/:code` + `stocks/:code/kline` 组合驱动
+> （搜索定位 → 当日行情 → 历史 K 线），与 `/market/:code` 详情页复用同一套接口。
 
 ## 测试（TDD）
 

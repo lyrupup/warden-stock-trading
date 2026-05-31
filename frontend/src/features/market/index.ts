@@ -8,7 +8,8 @@ export {
   useRemoveWatch,
   useStockQuote,
   useStockKline,
+  useStockSearch,
   useIsTradingTime,
 } from "./hooks";
-export { IndexCard, WatchlistTable, KlineChart } from "./components";
-export { MarketPage, StockDetailPage } from "./pages";
+export { IndexCard, WatchlistTable, KlineChart, StockQuotePanel } from "./components";
+export { MarketPage, StockDetailPage, StockQuotePage } from "./pages";

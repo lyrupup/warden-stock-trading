@@ -463,7 +463,10 @@ func (Position) TableName() string { return "positions" }
 | GET | `/market/watchlist/quotes` | 自选股实时行情 |
 | GET | `/market/stocks/:code` | 个股行情详情 |
 | GET | `/market/stocks/:code/kline?period=day` | K 线数据 |
-| GET | `/market/search?kw=` | 股票搜索 |
+| GET | `/market/search?kw=` | 股票搜索（按代码 / 名称） |
+
+> 前端「侦查 · 个股行情」页（`/market/quote`）即由 `search`（搜索定位）+ `stocks/:code`（当日行情）
+> + `stocks/:code/kline`（历史 K 线）三个接口组合驱动，与 `/market/:code` 详情页复用同一套接口。
 
 ### 4.4 M2 策略 Strategy
 

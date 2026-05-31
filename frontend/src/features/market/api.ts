@@ -5,6 +5,7 @@ import type {
   TIndexQuote,
   TKline,
   TKlinePeriod,
+  TStockBrief,
   TStockQuote,
   TWatchItem,
 } from "./types";
@@ -82,6 +83,9 @@ export function createMarketApi(client = http) {
           searchParams: { period, adjust },
         })
         .then((list) => list.map(normalizeKline)),
+    /** 按代码/名称搜索股票 */
+    search: (kw: string) =>
+      client.get<TStockBrief[]>("market/search", { searchParams: { kw } }),
   };
 }
 

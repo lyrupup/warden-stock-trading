@@ -9,5 +9,5 @@ export {
   formatChange,
   formatLargeNumber,
 } from "./format";
-export { isTradingDay, isTradingTime } from "./trading-time";
+export { type TTradingPhase, isTradingDay, isTradingTime, getTradingPhase } from "./trading-time";
 export { dayjs, formatDate, formatDateTime, fromNow } from "./date";
